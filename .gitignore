@@ -1,8 +1,8 @@
 .idea
 .venv
-FIFA_datan\Event Data
-FIFA_datan\Metadata
-FIFA_datan\Rosters
-FIFA_datan\Tracking Data
-FIFA_datan\competitions.csv
-FIFA_datan\PFF FC Change Log.docx
+FIFA_datan/Event Data
+FIFA_datan/Metadata
+FIFA_datan/Rosters
+FIFA_datan/Tracking Data
+FIFA_datan/competitions.csv
+FIFA_datan/PFF FC Change Log.docx
