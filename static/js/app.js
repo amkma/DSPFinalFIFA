@@ -1,22 +1,48 @@
 /**
- * FIFA World Cup 2022 Goal Visualizer - Main Application
+ * FIFA World Cup 2022 Event Visualizer - Main Application
  * OOP Implementation with 4 Principles:
  * - Encapsulation: Classes bundle data and methods
  * - Abstraction: Public API hides complex logic
- * - Inheritance: GoalVisualizer uses PitchRenderer
+ * - Inheritance: EventVisualizer uses PitchRenderer
  * - Polymorphism: Different event types rendered differently
  */
 
 // =============================================================================
-// INHERITANCE: GoalVisualizer uses composition with PitchRenderer
+// CONSTANTS: Event type icons and labels
 // =============================================================================
-class GoalVisualizer {
+const EVENT_ICONS = {
+    'Pass': '🎯',
+    'Shot': '💥',
+    'Cross': '↗️',
+    'Clearance': '🛡️',
+    'Challenge': '⚔️',
+    'Touch': '👆',
+    'Ball Carry': '🏃',
+    'Initial Touch': '▶️',
+    'Rebound': '🔄',
+    'Unknown': '⚡'
+};
+
+const SETPIECE_ICONS = {
+    'Open Play': '⚽',
+    'Throw-in': '🤾',
+    'Corner': '🚩',
+    'Kickoff': '🎬',
+    'Penalty': '⚠️',
+    'Goal Kick': '🥅',
+    'Free Kick': '🎯'
+};
+
+// =============================================================================
+// INHERITANCE: EventVisualizer uses composition with PitchRenderer
+// =============================================================================
+class EventVisualizer {
     constructor(canvasId, tooltipId) {
         this._canvas = document.getElementById(canvasId);
         this._tooltip = document.getElementById(tooltipId);
         this._renderer = null;
         this._infoCard = null;
-        this._currentGoalData = null;
+        this._currentEventData = null;
         
         if (this._canvas) {
             this._setupCanvas();
@@ -56,47 +82,47 @@ class GoalVisualizer {
         });
     }
 
-    visualize(goalData) {
-        this._currentGoalData = goalData;
+    visualize(eventData) {
+        this._currentEventData = eventData;
         
         if (!this._renderer) return;
         
-        const snapshot = goalData.snapshot || {};
-        const goal = goalData.goal || {};
+        const snapshot = eventData.snapshot || {};
+        const event = eventData.event || eventData.goal || {};
         
         // Build team colors map
         const teamColors = {};
-        if (goalData.homeTeam) {
-            teamColors[goalData.homeTeam.id] = goalData.homeTeam.primaryColor || '#3b82f6';
+        if (eventData.homeTeam) {
+            teamColors[eventData.homeTeam.id] = eventData.homeTeam.primaryColor || '#3b82f6';
         }
-        if (goalData.awayTeam) {
-            teamColors[goalData.awayTeam.id] = goalData.awayTeam.primaryColor || '#ef4444';
+        if (eventData.awayTeam) {
+            teamColors[eventData.awayTeam.id] = eventData.awayTeam.primaryColor || '#ef4444';
         }
         
         // Set players
         this._renderer.setPlayers(
             snapshot.homePlayers || [],
             snapshot.awayPlayers || [],
-            goalData.homeTeam,
-            goalData.awayTeam
+            eventData.homeTeam,
+            eventData.awayTeam
         );
         
         // Set ball position
         this._renderer.setBall(snapshot.ball);
         
-        // Build pass sequence from preceding events
-        const passEvents = (goalData.precedingEvents || [])
-            .filter(e => e.eventType === 'pass' || e.eventType === 'shot')
+        // Build event sequence from preceding events
+        const passEvents = (eventData.precedingEvents || [])
+            .filter(e => e.eventType)
             .map(e => ({
                 ballPosition: e.ballPosition,
                 teamId: e.teamId
             }));
         
-        // Add goal position
-        if (goal.ballPosition) {
+        // Add current event position
+        if (event.ballPosition) {
             passEvents.push({
-                ballPosition: goal.ballPosition,
-                teamId: goal.teamId
+                ballPosition: event.ballPosition,
+                teamId: event.teamId
             });
         }
         
@@ -109,8 +135,8 @@ class GoalVisualizer {
     resize() {
         if (this._canvas) {
             this._setupCanvas();
-            if (this._currentGoalData) {
-                this.visualize(this._currentGoalData);
+            if (this._currentEventData) {
+                this.visualize(this._currentEventData);
             }
         }
     }
@@ -124,9 +150,10 @@ class App {
     constructor(matchesData) {
         this._matches = matchesData || [];
         this._selectedMatchId = null;
-        this._goals = [];
+        this._plays = [];
         this._visualizer = null;
         this._currentMatch = null;
+        this._activeFilter = 'all';
         
         this._initElements();
         this._bindEvents();
@@ -138,7 +165,7 @@ class App {
         this.matchesGrid = document.getElementById('matchesGrid');
         this.matchCount = document.getElementById('matchCount');
         
-        // Goals modal
+        // Plays modal (formerly goals modal)
         this.goalsModal = document.getElementById('goalsModal');
         this.goalsCloseBtn = document.getElementById('goalsCloseBtn');
         this.matchTitle = document.getElementById('matchTitle');
@@ -155,7 +182,7 @@ class App {
     }
 
     _bindEvents() {
-        // Goals modal close
+        // Plays modal close
         if (this.goalsCloseBtn) {
             this.goalsCloseBtn.addEventListener('click', () => this._closeGoalsModal());
         }
@@ -230,6 +257,7 @@ class App {
                 <div class="match-info">
                     <span class="match-date">${this._formatDate(match.date)}</span>
                     <span class="goal-badge">${match.goalCount || 0} ⚽</span>
+                    <span class="play-badge">${match.playCount || 0} plays</span>
                 </div>
             </div>
         `;
@@ -237,15 +265,6 @@ class App {
         card.addEventListener('click', () => this._selectMatch(match.id));
         
         return card;
-    }
-
-    _darken(color) {
-        // Simple color darkening
-        if (!color || color.length < 7) return '#333';
-        const r = Math.max(0, parseInt(color.slice(1, 3), 16) - 40);
-        const g = Math.max(0, parseInt(color.slice(3, 5), 16) - 40);
-        const b = Math.max(0, parseInt(color.slice(5, 7), 16) - 40);
-        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
     }
 
     _formatDate(dateStr) {
@@ -266,7 +285,7 @@ class App {
             this.goalsGrid.innerHTML = `
                 <div class="loading-state">
                     <div class="loading-spinner"></div>
-                    <p>Loading goals...</p>
+                    <p>Loading plays...</p>
                 </div>
             `;
         }
@@ -274,12 +293,12 @@ class App {
         // Open modal immediately
         this._openGoalsModal();
         
-        // Load goals
+        // Load plays
         try {
-            const response = await fetch(`/api/matches/${matchId}/goals/`);
+            const response = await fetch(`/api/matches/${matchId}/plays/`);
             const data = await response.json();
             
-            this._goals = data.goals || [];
+            this._plays = data.plays || [];
             this._currentMatch = data.match;
             
             const homeName = this._currentMatch?.homeTeam?.name || 'Home';
@@ -289,18 +308,19 @@ class App {
                 this.matchTitle.textContent = `${homeName} vs ${awayName}`;
             }
             if (this.matchGoalCount) {
-                this.matchGoalCount.textContent = `${this._goals.length} Goal${this._goals.length !== 1 ? 's' : ''}`;
+                const totalEvents = this._plays.reduce((sum, seq) => sum + seq.events.length, 0);
+                this.matchGoalCount.textContent = `${this._plays.length} Sequences • ${totalEvents} Events`;
             }
             
-            this._renderGoals();
+            this._renderPlays();
             
         } catch (error) {
-            console.error('Error loading goals:', error);
+            console.error('Error loading plays:', error);
             if (this.goalsGrid) {
                 this.goalsGrid.innerHTML = `
                     <div class="empty-state error">
                         <div class="empty-icon">⚠️</div>
-                        <p>Error loading goals</p>
+                        <p>Error loading plays</p>
                     </div>
                 `;
             }
@@ -321,63 +341,169 @@ class App {
         }
     }
 
-    _renderGoals() {
+    _renderPlays() {
         if (!this.goalsGrid) return;
         
-        if (this._goals.length === 0) {
+        console.log('Rendering plays:', this._plays.length, 'sequences');
+        
+        if (this._plays.length === 0) {
             this.goalsGrid.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-icon">🥅</div>
-                    <p>No goals in this match</p>
+                    <div class="empty-icon">📋</div>
+                    <p>No plays in this match</p>
                 </div>
             `;
             return;
         }
         
-        // Create list container
-        const list = document.createElement('ul');
-        list.className = 'goals-list';
+        // Create filter bar
+        const filterBar = document.createElement('div');
+        filterBar.className = 'filter-bar';
+        filterBar.innerHTML = `
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="Shot">Shots 💥</button>
+            <button class="filter-btn" data-filter="Pass">Passes 🎯</button>
+            <button class="filter-btn" data-filter="goal">Goals ⚽</button>
+        `;
         
-        this._goals.forEach((goalData, index) => {
-            const item = this._createGoalListItem(goalData, index);
-            list.appendChild(item);
+        // Create list container
+        const list = document.createElement('div');
+        list.className = 'plays-list';
+        list.id = 'playsList';
+        
+        this._plays.forEach((sequence, seqIndex) => {
+            if (seqIndex < 3) {
+                console.log('Sequence', seqIndex, ':', sequence.setpieceType, sequence.time, 'events:', sequence.events?.length);
+            }
+            const seqElement = this._createSequenceElement(sequence, seqIndex);
+            list.appendChild(seqElement);
         });
         
         this.goalsGrid.innerHTML = '';
+        this.goalsGrid.appendChild(filterBar);
         this.goalsGrid.appendChild(list);
+        
+        // Bind filter events
+        filterBar.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this._filterPlays(e.target.dataset.filter);
+            });
+        });
     }
 
-    _createGoalListItem(goalData, index) {
-        const goal = goalData.goal || {};
-        const isHome = goal.teamId === this._currentMatch?.homeTeam?.id;
-        const teamShort = isHome 
+    _createSequenceElement(sequence, seqIndex) {
+        const container = document.createElement('div');
+        container.className = 'sequence-container';
+        container.dataset.sequenceId = sequence.sequenceId;
+        
+        // Sequence header
+        const header = document.createElement('div');
+        header.className = 'sequence-header';
+        
+        // Compare as strings
+        const homeTeamId = String(this._currentMatch?.homeTeam?.id || '');
+        const seqTeamId = String(sequence.teamId || '');
+        const isHomeTeam = seqTeamId === homeTeamId;
+        const teamShort = isHomeTeam
             ? (this._currentMatch?.homeTeam?.shortName || 'HOM')
             : (this._currentMatch?.awayTeam?.shortName || 'AWY');
         
-        const item = document.createElement('li');
-        item.className = 'goal-list-item';
+        const hasGoal = sequence.events.some(e => e.isGoal);
+        const setpieceIcon = SETPIECE_ICONS[sequence.setpieceType] || '⚽';
         
-        item.innerHTML = `
-            <span class="goal-index">${index + 1}.</span>
-            <span class="goal-scorer-name">${goal.playerName || 'Unknown'}</span>
-            <span class="goal-team-short">(${teamShort})</span>
-            <span class="goal-time-badge">${goal.formattedTime || ''}</span>
-            <button class="view-pitch-btn">View Pitch →</button>
+        header.innerHTML = `
+            <span class="seq-number">#${seqIndex + 1}</span>
+            <span class="seq-icon">${setpieceIcon}</span>
+            <span class="seq-type">${sequence.setpieceType || 'Open Play'}</span>
+            <span class="seq-team">${teamShort}</span>
+            <span class="seq-time">${sequence.time || ''}</span>
+            ${hasGoal ? '<span class="goal-indicator">⚽ GOAL</span>' : ''}
+            <span class="seq-count">${sequence.events.length} events</span>
+            <button class="expand-btn">▼</button>
         `;
         
-        item.querySelector('.view-pitch-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._openPitchModal(goalData);
+        // Events list (collapsed by default, expanded if has goal)
+        const eventsList = document.createElement('div');
+        eventsList.className = 'events-list' + (hasGoal ? ' expanded' : '');
+        
+        sequence.events.forEach((event, eventIndex) => {
+            const eventItem = this._createEventItem(event, eventIndex, sequence);
+            eventsList.appendChild(eventItem);
         });
         
-        item.addEventListener('click', () => this._openPitchModal(goalData));
+        container.appendChild(header);
+        container.appendChild(eventsList);
+        
+        // Toggle expansion
+        header.querySelector('.expand-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            eventsList.classList.toggle('expanded');
+            e.target.textContent = eventsList.classList.contains('expanded') ? '▲' : '▼';
+        });
+        
+        return container;
+    }
+
+    _createEventItem(event, eventIndex, sequence) {
+        const item = document.createElement('div');
+        item.className = 'event-item' + (event.isGoal ? ' goal-event' : '');
+        item.dataset.eventType = event.eventLabel || event.eventType;
+        
+        const icon = event.isGoal ? '⚽' : (EVENT_ICONS[event.eventLabel] || EVENT_ICONS['Unknown']);
+        
+        item.innerHTML = `
+            <span class="event-num">${eventIndex + 1}</span>
+            <span class="event-icon">${icon}</span>
+            <span class="event-player">${event.playerName || 'Unknown'}</span>
+            <span class="event-type">${event.isGoal ? 'GOAL!' : (event.eventLabel || event.eventType)}</span>
+            ${event.outcome ? `<span class="event-outcome">${event.outcome}</span>` : ''}
+            <button class="view-pitch-btn">View →</button>
+        `;
+        
+        // Click to view on pitch
+        item.querySelector('.view-pitch-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._openPitchModal(event, sequence);
+        });
+        
+        item.addEventListener('click', () => this._openPitchModal(event, sequence));
         
         return item;
     }
 
-    _openPitchModal(goalData) {
-        const goal = goalData.goal || {};
+    _filterPlays(filter) {
+        this._activeFilter = filter;
+        const playsList = document.getElementById('playsList');
+        if (!playsList) return;
         
+        playsList.querySelectorAll('.sequence-container').forEach(seq => {
+            let visible = false;
+            
+            seq.querySelectorAll('.event-item').forEach(item => {
+                const eventType = item.dataset.eventType;
+                const isGoal = item.classList.contains('goal-event');
+                
+                let show = false;
+                if (filter === 'all') {
+                    show = true;
+                } else if (filter === 'goal') {
+                    show = isGoal;
+                } else {
+                    // Match by label (Shot, Pass, etc.)
+                    show = eventType === filter;
+                }
+                
+                item.style.display = show ? 'flex' : 'none';
+                if (show) visible = true;
+            });
+            
+            seq.style.display = visible ? 'block' : 'none';
+        });
+    }
+
+    _openPitchModal(event, sequence) {
         // Update header
         if (this.pitchMatchTitle) {
             const homeName = this._currentMatch?.homeTeam?.name || 'Home';
@@ -386,15 +512,15 @@ class App {
         }
         
         if (this.goalScorerName) {
-            this.goalScorerName.textContent = goal.playerName || 'Unknown';
+            this.goalScorerName.textContent = event.playerName || 'Unknown';
         }
         
         if (this.goalMinute) {
-            this.goalMinute.textContent = goal.formattedTime || '';
+            this.goalMinute.textContent = event.time || sequence.time || '';
         }
         
-        // Render pass sequence
-        this._renderPassSequence(goalData);
+        // Render event sequence
+        this._renderEventSequence(event, sequence);
         
         // Show modal
         if (this.pitchModal) {
@@ -404,14 +530,34 @@ class App {
         // Initialize and render pitch
         setTimeout(() => {
             if (!this._visualizer) {
-                this._visualizer = new GoalVisualizer('pitchCanvas', 'playerTooltip');
+                this._visualizer = new EventVisualizer('pitchCanvas', 'playerTooltip');
             }
             
-            // Add team info to goal data
-            goalData.homeTeam = this._currentMatch?.homeTeam;
-            goalData.awayTeam = this._currentMatch?.awayTeam;
+            // Build snapshot from event data
+            const snapshot = {
+                homePlayers: event.homePlayers || [],
+                awayPlayers: event.awayPlayers || [],
+                ball: event.ballPosition
+            };
             
-            this._visualizer.visualize(goalData);
+            // Build event data for visualizer
+            const eventData = {
+                event: {
+                    ...event,
+                    ballPosition: event.ballPosition
+                },
+                snapshot: snapshot,
+                precedingEvents: sequence.events.slice(0, sequence.events.indexOf(event)).map(e => ({
+                    eventType: e.eventLabel || e.eventType,
+                    playerName: e.playerName,
+                    ballPosition: e.ballPosition,
+                    teamId: e.teamId
+                })),
+                homeTeam: this._currentMatch?.homeTeam,
+                awayTeam: this._currentMatch?.awayTeam
+            };
+            
+            this._visualizer.visualize(eventData);
         }, 100);
     }
 
@@ -421,72 +567,36 @@ class App {
         }
     }
 
-    _renderPassSequence(goalData) {
+    _renderEventSequence(currentEvent, sequence) {
         if (!this.passSequenceList) return;
         
         this.passSequenceList.innerHTML = '';
         
-        const goal = goalData.goal || {};
-        const isPenalty = goal.isPenalty || false;
+        // Show all events in sequence with current one highlighted
+        const events = sequence.events || [];
+        const currentIndex = events.indexOf(currentEvent);
         
-        // For penalties, show simple penalty indicator
-        if (isPenalty) {
-            const penaltyItem = document.createElement('div');
-            penaltyItem.className = 'pass-item penalty-item';
-            penaltyItem.innerHTML = `
-                <span class="pass-num">⚽</span>
-                <span class="pass-icon">🎯</span>
-                <span class="pass-player">${goal.playerName || 'Unknown'}</span>
-                <span class="pass-type">Penalty Kick</span>
-            `;
-            this.passSequenceList.appendChild(penaltyItem);
+        // Show context: 3 before and 3 after current event
+        const startIdx = Math.max(0, currentIndex - 3);
+        const endIdx = Math.min(events.length, currentIndex + 4);
+        
+        for (let i = startIdx; i < endIdx; i++) {
+            const event = events[i];
+            const isCurrent = i === currentIndex;
+            const icon = event.isGoal ? '⚽' : (EVENT_ICONS[event.eventLabel] || EVENT_ICONS['Unknown']);
             
-            // Add goal
-            const goalItem = document.createElement('div');
-            goalItem.className = 'pass-item goal-item';
-            goalItem.innerHTML = `
-                <span class="pass-num">✓</span>
-                <span class="pass-icon">🎉</span>
-                <span class="pass-player">SCORED!</span>
-                <span class="pass-type">GOAL!</span>
-            `;
-            this.passSequenceList.appendChild(goalItem);
-            return;
-        }
-        
-        // For regular goals, show pass sequence
-        const events = goalData.precedingEvents || [];
-        
-        // Show last 5 events max
-        const recentEvents = events.slice(-5);
-        
-        recentEvents.forEach((event, index) => {
             const item = document.createElement('div');
-            item.className = 'pass-item';
-            
-            const icon = event.eventType === 'pass' ? '🎯' : 
-                         event.eventType === 'shot' ? '💥' : '⚡';
+            item.className = 'pass-item' + (isCurrent ? ' current-event' : '') + (event.isGoal ? ' goal-item' : '');
             
             item.innerHTML = `
-                <span class="pass-num">${index + 1}</span>
+                <span class="pass-num">${i + 1}</span>
                 <span class="pass-icon">${icon}</span>
                 <span class="pass-player">${event.playerName || 'Unknown'}</span>
-                <span class="pass-type">${event.label || event.eventType || 'Event'}</span>
+                <span class="pass-type">${event.isGoal ? 'GOAL!' : (event.eventLabel || event.eventType)}</span>
             `;
             
             this.passSequenceList.appendChild(item);
-        });
-        
-        // Add goal
-        const goalItem = document.createElement('div');
-        goalItem.className = 'pass-item goal-item';
-        goalItem.innerHTML = `
-            <span class="pass-num">⚽</span>
-            <span class="pass-icon">🎉</span>
-            <span class="pass-player">${goal.playerName || 'Unknown'}</span>
-            <span class="pass-type">GOAL!</span>
-        `;
-        this.passSequenceList.appendChild(goalItem);
+        }
     }
 }
 

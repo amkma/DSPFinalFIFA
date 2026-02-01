@@ -622,6 +622,145 @@ class Match:
                     count += 1
         return count
     
+    def get_all_plays(self) -> List[Dict]:
+        """Get all plays/events in the match grouped by sequence"""
+        self._load_events()
+        
+        # Event type mapping for display
+        EVENT_LABELS = {
+            'PA': 'Pass',
+            'SH': 'Shot',
+            'CR': 'Cross',
+            'CL': 'Clearance',
+            'CH': 'Challenge',
+            'TC': 'Touch',
+            'BC': 'Ball Carry',
+            'IT': 'Initial Touch',
+            'RE': 'Rebound'
+        }
+        
+        # Setpiece type mapping
+        SETPIECE_LABELS = {
+            'O': 'Open Play',
+            'T': 'Throw-in',
+            'C': 'Corner',
+            'K': 'Kickoff',
+            'P': 'Penalty',
+            'G': 'Goal Kick',
+            'F': 'Free Kick'
+        }
+        
+        plays = []
+        
+        for i, event in enumerate(self._events):
+            game_events = event.get('gameEvents', {})
+            poss_events = event.get('possessionEvents', {})
+            
+            # Get event type
+            event_type = poss_events.get('possessionEventType')
+            if not event_type:
+                continue  # Skip events without possession type
+            
+            # Skip if nonEvent (disallowed)
+            if poss_events.get('nonEvent', False):
+                continue
+            
+            # Get primary player for this event
+            player_name = ''
+            player_id = None
+            if event_type == 'PA':
+                player_name = poss_events.get('passerPlayerName', '')
+                player_id = poss_events.get('passerPlayerId')
+            elif event_type == 'SH':
+                player_name = poss_events.get('shooterPlayerName', '')
+                player_id = poss_events.get('shooterPlayerId')
+            elif event_type == 'CR':
+                player_name = poss_events.get('crosserPlayerName', '')
+                player_id = poss_events.get('crosserPlayerId')
+            elif event_type == 'CL':
+                player_name = poss_events.get('clearerPlayerName', '')
+                player_id = poss_events.get('clearerPlayerId')
+            elif event_type == 'CH':
+                # For challenges, show both players
+                home_player = poss_events.get('homeDuelPlayerName', '')
+                away_player = poss_events.get('awayDuelPlayerName', '')
+                player_name = f"{home_player} vs {away_player}" if home_player and away_player else home_player or away_player
+                player_id = poss_events.get('homeDuelPlayerId') or poss_events.get('awayDuelPlayerId')
+            elif event_type == 'TC':
+                player_name = poss_events.get('touchPlayerName', '')
+                player_id = poss_events.get('touchPlayerId')
+            elif event_type == 'BC':
+                player_name = poss_events.get('ballCarrierPlayerName', '')
+                player_id = poss_events.get('ballCarrierPlayerId')
+            elif event_type == 'RE':
+                player_name = poss_events.get('rebounderPlayerName', '')
+                player_id = poss_events.get('rebounderPlayerId')
+            else:
+                player_name = game_events.get('playerName', '')
+                player_id = game_events.get('playerId')
+            
+            # Get secondary player (receiver, target, etc.)
+            secondary_player = ''
+            if event_type == 'PA':
+                secondary_player = poss_events.get('receiverPlayerName', '') or poss_events.get('targetPlayerName', '')
+            elif event_type == 'CR':
+                secondary_player = poss_events.get('targetPlayerName', '')
+            
+            # Get outcome
+            outcome = ''
+            is_goal = False
+            if event_type == 'PA':
+                outcome = poss_events.get('passOutcomeType', '')
+            elif event_type == 'SH':
+                outcome = poss_events.get('shotOutcomeType', '')
+                is_goal = outcome == 'G'
+            elif event_type == 'CR':
+                outcome = poss_events.get('crossOutcomeType', '')
+            elif event_type == 'CL':
+                outcome = poss_events.get('clearanceOutcomeType', '')
+            elif event_type == 'CH':
+                outcome = poss_events.get('challengeOutcomeType', '')
+            
+            # Get ball position
+            ball_data = event.get('ball', [{}])
+            ball_pos = None
+            if ball_data and len(ball_data) > 0:
+                ball_pos = {
+                    'x': ball_data[0].get('x', 0),
+                    'y': ball_data[0].get('y', 0),
+                    'z': ball_data[0].get('z', 0)
+                }
+            
+            # Get player positions
+            home_players = event.get('homePlayers', [])
+            away_players = event.get('awayPlayers', [])
+            
+            play_data = {
+                'index': i,
+                'eventId': event.get('gameEventId'),
+                'sequence': event.get('sequence'),
+                'time': game_events.get('startFormattedGameClock', ''),
+                'period': game_events.get('period', 1),
+                'eventType': event_type,
+                'eventLabel': EVENT_LABELS.get(event_type, event_type),
+                'setpieceType': game_events.get('setpieceType', ''),
+                'setpieceLabel': SETPIECE_LABELS.get(game_events.get('setpieceType', ''), ''),
+                'teamId': str(game_events.get('teamId', '')),
+                'teamName': game_events.get('teamName', ''),
+                'playerName': player_name,
+                'playerId': player_id,
+                'secondaryPlayer': secondary_player,
+                'outcome': outcome,
+                'isGoal': is_goal,
+                'ballPosition': ball_pos,
+                'homePlayers': home_players,
+                'awayPlayers': away_players
+            }
+            
+            plays.append(play_data)
+        
+        return plays
+    
     def to_dict(self) -> Dict:
         """Convert match to dictionary"""
         return {
@@ -630,7 +769,8 @@ class Match:
             'awayTeam': self.away_team.to_dict() if self.away_team else None,
             'date': self._metadata.get('date', '') if self._metadata else '',
             'stadium': self._metadata.get('stadium', {}).get('name', '') if self._metadata else '',
-            'goalCount': self.count_goals()
+            'goalCount': self.count_goals(),
+            'playCount': len(self.get_all_plays()) if self._events else 0
         }
 
 
@@ -753,4 +893,47 @@ def api_match_goals(request, match_id: str):
             'awayTeam': match.away_team.to_dict() if match.away_team else None
         },
         'goals': goals
+    })
+
+
+def api_match_plays(request, match_id: str):
+    """API: Get all plays for a specific match, grouped by sequence"""
+    match = MatchRepository.get_match(match_id)
+    if not match:
+        return JsonResponse({'error': 'Match not found'}, status=404)
+    
+    plays = match.get_all_plays()
+    
+    # Group plays by sequence for better organization
+    # Skip events without valid sequence
+    sequences_dict = {}
+    for play in plays:
+        seq_id = play.get('sequence')
+        if seq_id is None:
+            continue  # Skip events without sequence
+        if seq_id not in sequences_dict:
+            sequences_dict[seq_id] = {
+                'sequenceId': int(seq_id) if seq_id else 0,
+                'teamId': play.get('teamId'),
+                'setpieceType': play.get('setpieceLabel') or play.get('setpieceType') or 'Open Play',
+                'time': play.get('time') or '',
+                'events': []
+            }
+        sequences_dict[seq_id]['events'].append(play)
+        # Update time to first event's time if not set
+        if not sequences_dict[seq_id]['time'] and play.get('time'):
+            sequences_dict[seq_id]['time'] = play.get('time')
+    
+    # Convert to sorted list (handle None sequenceIds)
+    sequences_list = sorted(sequences_dict.values(), key=lambda s: s['sequenceId'] if s['sequenceId'] is not None else -1)
+    
+    return JsonResponse({
+        'matchId': match_id,
+        'match': {
+            'homeTeam': match.home_team.to_dict() if match.home_team else None,
+            'awayTeam': match.away_team.to_dict() if match.away_team else None
+        },
+        'plays': sequences_list,
+        'totalEvents': len(plays),
+        'totalSequences': len(sequences_list)
     })

@@ -709,9 +709,10 @@ body {
     font-weight: 400;
 }
 
-/* Goals Grid */
+/* Goals Grid / Plays Grid */
 .goals-grid {
     padding: 0;
+    min-height: 200px;
 }
 
 /* Goals List Style */
@@ -1094,5 +1095,308 @@ body {
     
     .goals-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+/* =============================================================================
+   Plays & Sequences UI
+   ============================================================================= */
+
+/* Play Badge on Match Card */
+.play-badge {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* Filter Bar */
+.filter-bar {
+    display: flex;
+    gap: 8px;
+    padding: 12px 0;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.filter-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.filter-btn.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: white;
+}
+
+/* Plays List */
+.plays-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+.plays-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.plays-list::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+    border-radius: 3px;
+}
+
+.plays-list::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+
+/* Sequence Container */
+.sequence-container {
+    background: #262626;
+    border-radius: 12px;
+    overflow: visible;
+    border: 1px solid #363636;
+    min-height: 50px;
+}
+
+/* Sequence Header */
+.sequence-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    background: #1a1a1a;
+    cursor: pointer;
+    transition: background 0.2s;
+    min-height: 48px;
+    color: #fafafa;
+}
+
+.sequence-header:hover {
+    background: #363636;
+}
+
+.seq-number {
+    font-size: 13px;
+    font-weight: 700;
+    color: #a8a8a8;
+    min-width: 40px;
+}
+
+.seq-icon {
+    font-size: 20px;
+    min-width: 24px;
+}
+
+.seq-type {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fafafa;
+    min-width: 80px;
+}
+
+.seq-team {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-blue);
+    background: rgba(0, 149, 246, 0.1);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+}
+
+.seq-time {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.goal-indicator {
+    background: linear-gradient(135deg, var(--success), #22c55e);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.seq-count {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.expand-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 8px;
+    transition: transform 0.2s;
+}
+
+.expand-btn:hover {
+    color: var(--text-primary);
+}
+
+/* Events List */
+.events-list {
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+    background: var(--bg-secondary);
+}
+
+.events-list.expanded {
+    display: flex;
+}
+
+/* Event Item */
+.event-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.event-item:hover {
+    background: var(--bg-hover);
+    transform: translateX(4px);
+}
+
+.event-num {
+    width: 24px;
+    height: 24px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.event-icon {
+    font-size: 16px;
+    width: 24px;
+    text-align: center;
+}
+
+.event-player {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.event-type {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+}
+
+.event-outcome {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.event-item .view-pitch-btn {
+    background: var(--accent-blue);
+    border: none;
+    color: white;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.event-item:hover .view-pitch-btn {
+    opacity: 1;
+}
+
+/* Goal Event Highlight */
+.event-item.goal-event {
+    background: linear-gradient(135deg, rgba(74, 222, 128, 0.15), rgba(74, 222, 128, 0.05));
+    border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+.event-item.goal-event .event-num {
+    background: var(--success);
+    color: white;
+}
+
+.event-item.goal-event .event-type {
+    background: var(--success);
+    color: white;
+}
+
+/* Current Event Highlight (in pitch modal) */
+.pass-item.current-event {
+    background: linear-gradient(135deg, rgba(0, 149, 246, 0.2), rgba(0, 149, 246, 0.1));
+    border: 2px solid var(--accent-blue);
+}
+
+.pass-item.current-event .pass-num {
+    background: var(--accent-blue);
+}
+
+/* Responsive Plays */
+@media (max-width: 768px) {
+    .filter-bar {
+        gap: 6px;
+    }
+    
+    .filter-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    
+    .sequence-header {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .seq-time {
+        margin-left: 0;
+    }
+    
+    .event-item .view-pitch-btn {
+        opacity: 1;
+        padding: 4px 8px;
+        font-size: 11px;
     }
 }
