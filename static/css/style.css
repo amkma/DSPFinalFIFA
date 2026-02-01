@@ -1,0 +1,1098 @@
+/* =============================================================================
+   FIFA World Cup 2022 Goal Visualizer
+   Instagram-inspired Dark Mode Design
+   ============================================================================= */
+
+/* CSS Variables */
+:root {
+    --bg-primary: #000000;
+    --bg-secondary: #121212;
+    --bg-tertiary: #1a1a1a;
+    --bg-card: #262626;
+    --bg-hover: #363636;
+    --text-primary: #fafafa;
+    --text-secondary: #a8a8a8;
+    --text-muted: #737373;
+    --border-color: #363636;
+    --accent-blue: #0095f6;
+    --accent-pink: #e1306c;
+    --accent-purple: #833ab4;
+    --accent-gradient: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+    --success: #4ade80;
+    --danger: #ef4444;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.5);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-full: 9999px;
+}
+
+/* Reset & Base */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    min-height: 100vh;
+}
+
+/* App Container */
+.app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header - Instagram Style */
+.header {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.header-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo-icon {
+    font-size: 28px;
+}
+
+.logo-text {
+    font-size: 22px;
+    font-weight: 700;
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.nav {
+    display: flex;
+    gap: 24px;
+}
+
+.nav-link {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    transition: all 0.2s ease;
+}
+
+.nav-link:hover,
+.nav-link.active {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+
+/* Main Content */
+.main {
+    flex: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 20px;
+    width: 100%;
+}
+
+.section-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: var(--text-primary);
+}
+
+/* Matches Grid - Instagram Card Style */
+.matches-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.match-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.match-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent-blue);
+    box-shadow: 0 8px 30px rgba(0, 149, 246, 0.2);
+}
+
+.match-card:hover .team-short.home {
+    text-shadow: 0 0 20px rgba(0, 149, 246, 0.5);
+}
+
+.match-card:hover .team-short.away {
+    text-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+}
+
+.match-card-header {
+    padding: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.match-date {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.match-stadium {
+    font-size: 11px;
+    color: var(--text-muted);
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.match-teams {
+    padding: 24px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.team {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+}
+
+.team-badge {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    box-shadow: var(--shadow-md);
+}
+
+.team-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-align: center;
+}
+
+.vs-divider {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+
+.match-card-footer {
+    padding: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+.view-goals-btn {
+    width: 100%;
+    padding: 12px 24px;
+    background: var(--accent-blue);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.view-goals-btn:hover {
+    background: #1aa1f7;
+    transform: scale(1.02);
+}
+
+/* Modal - Instagram Style */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal.active {
+    display: flex;
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    max-width: 500px;
+    width: 90%;
+    max-height: 85vh;
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-color);
+}
+
+.pitch-modal-content {
+    max-width: 800px;
+}
+
+.modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.modal-title {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.modal-close {
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 24px;
+    cursor: pointer;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+}
+
+.modal-close:hover {
+    background: var(--bg-hover);
+}
+
+.modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    max-height: calc(85vh - 70px);
+}
+
+/* Goals List */
+.goals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.goal-card {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.goal-card:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-blue);
+}
+
+.goal-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.goal-icon {
+    font-size: 24px;
+}
+
+.goal-time {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent-blue);
+}
+
+.goal-period {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.goal-scorer {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.goal-team {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.no-goals {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+}
+
+.no-goals-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+/* Pitch Container */
+.pitch-container {
+    position: relative;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+#pitchCanvas {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: var(--radius-sm);
+}
+
+/* Player Tooltip */
+.player-tooltip {
+    display: none;
+    position: absolute;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    pointer-events: none;
+    min-width: 150px;
+}
+
+.player-tooltip.active {
+    display: block;
+}
+
+.tooltip-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.tooltip-info {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.tooltip-jersey {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: var(--accent-blue);
+    color: white;
+    border-radius: var(--radius-full);
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 8px;
+}
+
+/* Goal Info */
+.goal-info {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.goal-info-title {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.goal-info-scorer {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.goal-info-time {
+    font-size: 14px;
+    color: var(--accent-blue);
+    margin-top: 4px;
+}
+
+/* Pass Sequence */
+.pass-sequence {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: 16px;
+}
+
+.pass-sequence-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+}
+
+.pass-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pass-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+}
+
+.pass-number {
+    width: 24px;
+    height: 24px;
+    background: var(--accent-gradient);
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: white;
+}
+
+.pass-players {
+    flex: 1;
+}
+
+.pass-from {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.pass-arrow {
+    color: var(--text-muted);
+    margin: 0 4px;
+}
+
+.pass-to {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* Loading State */
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+}
+
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: var(--text-muted);
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 16px;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Header Stats */
+.header-stats {
+    display: flex;
+    gap: 12px;
+}
+
+.stat-badge {
+    background: var(--bg-tertiary);
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.stat-badge span {
+    color: var(--accent-blue);
+    font-weight: 600;
+}
+
+/* Section Title */
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: var(--text-primary);
+}
+
+.title-icon {
+    font-size: 28px;
+}
+
+/* Match Card - Updated */
+.card-header {
+    padding: 24px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-card));
+}
+
+/* Team Short Name Style */
+.team-short {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+.team-short.home {
+    color: var(--accent-blue);
+}
+
+.team-short.away {
+    color: var(--danger);
+}
+
+.vs-badge {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    padding: 6px 12px;
+    border-radius: var(--radius-full);
+}
+
+.card-body {
+    padding: 16px;
+}
+
+.team-names {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.team-separator {
+    color: var(--text-muted);
+}
+
+.match-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.goal-badge {
+    background: var(--bg-tertiary);
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* Modal Container - Updated */
+.modal-container {
+    position: relative;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    max-width: 600px;
+    width: 90%;
+    max-height: 85vh;
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-color);
+}
+
+.pitch-modal {
+    max-width: 900px;
+}
+
+.modal-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.modal-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
+/* Goals Grid */
+.goals-grid {
+    padding: 0;
+}
+
+/* Goals List Style */
+.goals-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.goal-list-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.goal-list-item:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-blue);
+}
+
+.goal-index {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent-blue);
+    min-width: 24px;
+}
+
+.goal-scorer-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+}
+
+.goal-team-short {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.goal-time-badge {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-blue);
+    background: rgba(0, 149, 246, 0.15);
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+}
+
+.view-pitch-btn {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border-color);
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.view-pitch-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+    background: rgba(0, 149, 246, 0.1);
+}
+
+/* Goal Card - Updated */
+.goal-preview {
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    position: relative;
+}
+
+.goal-icon {
+    font-size: 32px;
+}
+
+.goal-number {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.goal-info {
+    padding: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+.scorer-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.scorer-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 16px;
+    color: white;
+}
+
+.scorer-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.scorer-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.scorer-team {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.goal-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.goal-time {
+    font-size: 13px;
+    color: var(--accent-blue);
+    font-weight: 500;
+}
+
+.view-btn {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* Pitch Modal Body */
+.pitch-modal-body {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 20px;
+}
+
+.pitch-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.pitch-container {
+    position: relative;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+#pitchCanvas {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.pitch-legend {
+    display: flex;
+    gap: 20px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: var(--radius-full);
+}
+
+.legend-dot.home {
+    background: var(--accent-blue);
+}
+
+.legend-dot.away {
+    background: var(--danger);
+}
+
+.legend-dot.ball {
+    background: white;
+    border: 2px solid black;
+}
+
+/* Pass Sequence Panel */
+.pass-sequence-panel {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.pass-sequence-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.pass-item {
+    display: grid;
+    grid-template-columns: 24px 24px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+}
+
+.pass-num {
+    width: 24px;
+    height: 24px;
+    background: var(--accent-gradient);
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: white;
+    font-size: 11px;
+}
+
+.pass-icon {
+    font-size: 14px;
+}
+
+.pass-player {
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pass-type {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.goal-item {
+    background: linear-gradient(135deg, rgba(74, 222, 128, 0.2), rgba(74, 222, 128, 0.1));
+    border: 1px solid var(--success);
+}
+
+.goal-item .pass-num {
+    background: var(--success);
+}
+
+.goal-item .pass-type {
+    color: var(--success);
+}
+
+.penalty-item {
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(251, 191, 36, 0.1));
+    border: 1px solid #fbbf24;
+}
+
+.penalty-item .pass-num {
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+}
+
+.penalty-item .pass-type {
+    color: #fbbf24;
+    font-weight: 600;
+    font-weight: 600;
+}
+
+/* Goal Details in Header */
+.goal-details {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.goal-scorer {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent-blue);
+}
+
+.goal-minute {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* Empty State */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+    grid-column: 1 / -1;
+}
+
+.empty-state.error {
+    color: var(--danger);
+}
+
+.empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.6;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .matches-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .modal-container {
+        width: 95%;
+        max-height: 90vh;
+    }
+    
+    .pitch-modal-body {
+        grid-template-columns: 1fr;
+    }
+    
+    .pass-sequence-panel {
+        max-height: 200px;
+    }
+    
+    .pitch-container {
+        padding: 8px;
+    }
+    
+    .goals-grid {
+        grid-template-columns: 1fr;
+    }
+}

@@ -48,7 +48,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'DSPFinalProject.urls'
+ROOT_URLCONF = 'DSPFinalFIFA.urls'
 
 TEMPLATES = [
     {
@@ -66,7 +66,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'DSPFinalProject.wsgi.application'
+WSGI_APPLICATION = 'DSPFinalFIFA.wsgi.application'
 
 
 # Database
@@ -115,3 +115,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATICFILES_DIRS = [BASE_DIR / 'static']
+
+# Data directory
+DATA_DIR = BASE_DIR / 'FIFA_datan'
