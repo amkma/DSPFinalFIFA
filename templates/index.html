@@ -85,6 +85,10 @@
                             <canvas id="pitchCanvas"></canvas>
                             <div class="player-tooltip" id="playerTooltip"></div>
                         </div>
+                        <div class="search-buttons" id="searchButtons">
+                            <button class="search-btn" id="searchEventBtn">🔍 Search Similar Event</button>
+                            <button class="search-btn" id="searchSequenceBtn">🔍 Search Similar Sequence</button>
+                        </div>
                         <div class="pitch-legend">
                             <div class="legend-item">
                                 <span class="legend-dot home"></span>
@@ -99,11 +103,29 @@
                                 <span>Ball</span>
                             </div>
                         </div>
+                        <!-- Comparison pitch (hidden by default) -->
+                        <div class="comparison-section" id="comparisonSection" style="display: none;">
+                            <div class="comparison-header">
+                                <h4>Similar Play</h4>
+                                <span class="similarity-badge" id="similarityScore">0.00</span>
+                            </div>
+                            <div class="pitch-container comparison-pitch">
+                                <canvas id="comparisonCanvas"></canvas>
+                                <div class="player-tooltip" id="comparisonTooltip"></div>
+                            </div>
+                        </div>
                     </div>
                     <div class="pass-sequence-panel">
-                        <h4 class="panel-title">Pass Sequence</h4>
+                        <div class="panel-header-row">
+                            <h4 class="panel-title" id="panelTitle">Pass Sequence</h4>
+                            <button class="back-btn" id="searchBackBtn" style="display: none;">← Back</button>
+                        </div>
                         <div class="pass-sequence-list" id="passSequenceList">
                             <!-- Pass sequence will be rendered by JavaScript -->
+                        </div>
+                        <!-- Search results container (hidden by default) -->
+                        <div class="search-results" id="searchResults" style="display: none;">
+                            <!-- Search results will be rendered by JavaScript -->
                         </div>
                     </div>
                 </div>

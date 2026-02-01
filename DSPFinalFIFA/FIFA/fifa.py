@@ -11,6 +11,7 @@ from pathlib import Path
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views import View
+from django.views.decorators.csrf import csrf_exempt
 
 
 # =============================================================================
@@ -701,10 +702,38 @@ class Match:
             
             # Get secondary player (receiver, target, etc.)
             secondary_player = ''
+            secondary_player_id = None
             if event_type == 'PA':
                 secondary_player = poss_events.get('receiverPlayerName', '') or poss_events.get('targetPlayerName', '')
+                secondary_player_id = poss_events.get('receiverPlayerId') or poss_events.get('targetPlayerId')
             elif event_type == 'CR':
                 secondary_player = poss_events.get('targetPlayerName', '')
+                secondary_player_id = poss_events.get('targetPlayerId')
+            elif event_type == 'SH':
+                # Goalkeeper and assister for shots
+                secondary_player_id = poss_events.get('keeperPlayerId')
+                # Assister is the passer for the shot
+                assister_id = poss_events.get('passerPlayerId')
+            
+            # Build list of key player IDs for this event
+            key_player_ids = []
+            if player_id:
+                key_player_ids.append(player_id)
+            if secondary_player_id:
+                key_player_ids.append(secondary_player_id)
+            # For shots/goals, add assister
+            if event_type == 'SH':
+                assister = poss_events.get('passerPlayerId')
+                if assister:
+                    key_player_ids.append(assister)
+            # For challenges, add both duel players
+            if event_type == 'CH':
+                home_duel_id = poss_events.get('homeDuelPlayerId')
+                away_duel_id = poss_events.get('awayDuelPlayerId')
+                if home_duel_id:
+                    key_player_ids.append(home_duel_id)
+                if away_duel_id:
+                    key_player_ids.append(away_duel_id)
             
             # Get outcome
             outcome = ''
@@ -750,6 +779,11 @@ class Match:
                 'playerName': player_name,
                 'playerId': player_id,
                 'secondaryPlayer': secondary_player,
+                'secondaryPlayerId': secondary_player_id,
+                'assisterName': poss_events.get('passerPlayerName', '') if event_type == 'SH' else '',
+                'assisterId': poss_events.get('passerPlayerId') if event_type == 'SH' else None,
+                'keeperName': poss_events.get('keeperPlayerName', '') if event_type == 'SH' else '',
+                'keyPlayerIds': key_player_ids,
                 'outcome': outcome,
                 'isGoal': is_goal,
                 'ballPosition': ball_pos,
@@ -762,15 +796,13 @@ class Match:
         return plays
     
     def to_dict(self) -> Dict:
-        """Convert match to dictionary"""
+        """Convert match to dictionary (lightweight, no event loading)"""
         return {
             'id': self.match_id,
             'homeTeam': self.home_team.to_dict() if self.home_team else None,
             'awayTeam': self.away_team.to_dict() if self.away_team else None,
             'date': self._metadata.get('date', '') if self._metadata else '',
-            'stadium': self._metadata.get('stadium', {}).get('name', '') if self._metadata else '',
-            'goalCount': self.count_goals(),
-            'playCount': len(self.get_all_plays()) if self._events else 0
+            'stadium': self._metadata.get('stadium', {}).get('name', '') if self._metadata else ''
         }
 
 
@@ -937,3 +969,89 @@ def api_match_plays(request, match_id: str):
         'totalEvents': len(plays),
         'totalSequences': len(sequences_list)
     })
+
+
+# =============================================================================
+# SEARCH API ENDPOINTS
+# =============================================================================
+@csrf_exempt
+def api_search_event(request):
+    """API: Search for similar events using TF-IDF"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    
+    import json
+    from .search import search_similar_events
+    
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    
+    query_event = data.get('event')
+    if not query_event:
+        return JsonResponse({'error': 'event required'}, status=400)
+    
+    exclude_match_id = data.get('matchId')
+    exclude_seq_id = data.get('sequenceId')
+    exclude_event_idx = data.get('eventIndex')
+    top_n = data.get('topN', 10)
+    
+    results = search_similar_events(
+        query_event=query_event,
+        exclude_match_id=exclude_match_id,
+        exclude_seq_id=exclude_seq_id,
+        exclude_event_idx=exclude_event_idx,
+        top_n=top_n
+    )
+    
+    return JsonResponse({
+        'query': {
+            'eventType': query_event.get('eventLabel', query_event.get('eventType', '')),
+            'playerName': query_event.get('playerName', ''),
+            'time': query_event.get('time', '')
+        },
+        'results': results,
+        'count': len(results)
+    })
+
+
+@csrf_exempt
+def api_search_sequence(request):
+    """API: Search for similar sequences using TF-IDF"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    
+    import json
+    from .search import search_similar_sequences
+    
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    
+    query_events = data.get('events')
+    if not query_events:
+        return JsonResponse({'error': 'events required'}, status=400)
+    
+    exclude_match_id = data.get('matchId')
+    exclude_seq_id = data.get('sequenceId')
+    top_n = data.get('topN', 10)
+    
+    results = search_similar_sequences(
+        query_events=query_events,
+        exclude_match_id=exclude_match_id,
+        exclude_seq_id=exclude_seq_id,
+        top_n=top_n
+    )
+    
+    return JsonResponse({
+        'query': {
+            'setpieceType': query_events[0].get('setpieceLabel', '') if query_events else '',
+            'eventCount': len(query_events),
+            'time': query_events[0].get('time', '') if query_events else ''
+        },
+        'results': results,
+        'count': len(results)
+    })
+

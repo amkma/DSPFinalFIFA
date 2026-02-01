@@ -29,7 +29,7 @@ class Position {
         
         // Convert from pitch coordinates (center origin) to canvas coordinates
         const normX = ((this._x + pitchLength / 2) / pitchLength) * drawWidth + padding;
-        const normY = ((this._y + pitchWidth / 2) / pitchWidth) * drawHeight + padding;
+        const normY = ((-this._y + pitchWidth / 2) / pitchWidth) * drawHeight + padding;
         
         return { x: normX, y: normY };
     }
@@ -233,10 +233,70 @@ class PitchRenderer {
         this._players = [];
         this._ball = null;
         this._passArrows = [];
+        this._eventMarker = null;  // {type, position}
         
         // Pitch colors
         this._pitchColor = '#1a472a';
         this._lineColor = '#ffffff';
+    }
+    
+    // Set event marker to draw at ball position
+    setEventMarker(type, position) {
+        if (type && position) {
+            this._eventMarker = { type, position };
+        } else {
+            this._eventMarker = null;
+        }
+    }
+    
+    // Draw event-specific marker at position
+    _drawEventMarker() {
+        if (!this._eventMarker) return;
+        
+        const ctx = this._ctx;
+        const pos = new Position(this._eventMarker.position.x, this._eventMarker.position.y)
+            .toCanvas(this._width, this._height);
+        
+        const type = this._eventMarker.type;
+        
+        ctx.save();
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        if (type === 'Challenge') {
+            // Crossed swords for challenge
+            ctx.fillStyle = '#ff4444';
+            ctx.shadowColor = '#ff0000';
+            ctx.shadowBlur = 10;
+            ctx.fillText('⚔️', pos.x, pos.y - 25);
+        } else if (type === 'Shot') {
+            // Explosion for shot
+            ctx.fillStyle = '#ffcc00';
+            ctx.shadowColor = '#ffaa00';
+            ctx.shadowBlur = 10;
+            ctx.fillText('💥', pos.x, pos.y - 25);
+        } else if (type === 'Cross') {
+            // Curved arrow for cross
+            ctx.fillStyle = '#00ccff';
+            ctx.shadowColor = '#00aaff';
+            ctx.shadowBlur = 8;
+            ctx.fillText('↗️', pos.x, pos.y - 25);
+        } else if (type === 'Clearance') {
+            // Shield for clearance
+            ctx.fillStyle = '#44ff44';
+            ctx.shadowColor = '#22cc22';
+            ctx.shadowBlur = 8;
+            ctx.fillText('🛡️', pos.x, pos.y - 25);
+        } else if (type === 'Pass') {
+            // Target for pass
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = '#aaaaaa';
+            ctx.shadowBlur = 6;
+            ctx.fillText('🎯', pos.x, pos.y - 25);
+        }
+        
+        ctx.restore();
     }
 
     // Clear and draw pitch
@@ -423,6 +483,9 @@ class PitchRenderer {
         if (this._ball) {
             this._ball.render(this._ctx, this._width, this._height);
         }
+        
+        // Draw event marker above ball
+        this._drawEventMarker();
     }
 
     // Find player at coordinates
