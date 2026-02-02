@@ -86,7 +86,10 @@
                             <div class="player-tooltip" id="playerTooltip"></div>
                         </div>
                         <div class="search-buttons" id="searchButtons">
-                            <button class="search-btn" id="searchEventBtn">🔍 Search Similar Event</button>
+                            <select class="search-method-select" id="searchMethodSelect">
+                                <option value="dtw" selected>DTW</option>
+                                <option value="tfidf">TF-IDF</option>
+                            </select>
                             <button class="search-btn" id="searchSequenceBtn">🔍 Search Similar Sequence</button>
                         </div>
                         <div class="pitch-legend" id="pitchLegend">

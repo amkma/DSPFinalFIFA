@@ -1,0 +1,668 @@
+"""
+DTW (Dynamic Time Warping) Similarity Search for FIFA World Cup 2022 Sequences
+Finds similar sequences based on temporal/spatial patterns using FastDTW algorithm
+"""
+import math
+import numpy as np
+from typing import List, Dict, Tuple, Optional, Any
+from pathlib import Path
+import json
+
+# FastDTW for efficient DTW computation
+try:
+    from fastdtw import fastdtw
+    FASTDTW_AVAILABLE = True
+except ImportError:
+    FASTDTW_AVAILABLE = False
+    print("[DTW] Warning: fastdtw not installed. Run: pip install fastdtw")
+
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+TOP_N = 10                      # Default number of results to return
+NEAR_BALL_RADIUS = 15           # meters - players within this distance of ball
+MAX_DISTANCE = 150              # Maximum possible distance for normalization
+
+# Feature weights (equal by default, tune as needed)
+WEIGHTS = {
+    'ball_position': 1.0,
+    'event_type': 1.0,
+    'player_formation': 1.0,
+    'pass_type': 0.5,
+    'shot_type': 0.5,
+    'pressure_type': 0.3
+}
+
+# Optional features toggle
+OPTIONAL_FEATURES = {
+    'pass_type': False,
+    'shot_type': False,
+    'pressure_type': False
+}
+
+
+# =============================================================================
+# EVENT TYPE SIMILARITY MATRIX
+# =============================================================================
+# Event types from data: PA (Pass), SH (Shot), IT (Initial Touch), RE (Recovery),
+# CR (Cross), CA (Carry), DR (Dribble), CL (Clearance), TO (Touch), etc.
+
+EVENT_TYPES = ['PA', 'SH', 'IT', 'RE', 'CR', 'CA', 'DR', 'CL', 'TO', 'FK', 'CK', 'TI', 'GK', 'PK', 'OG']
+
+# Similarity groups (types within same group are similar)
+EVENT_GROUPS = {
+    'passing': ['PA', 'CR', 'FK', 'CK', 'TI', 'GK'],  # Pass-like events
+    'shooting': ['SH', 'PK'],                          # Shot events
+    'control': ['IT', 'RE', 'TO', 'CA'],               # Ball control events
+    'dribbling': ['DR', 'CA'],                         # Dribble/carry events
+    'defensive': ['CL', 'RE'],                         # Defensive events
+}
+
+def _get_event_group(event_type: str) -> List[str]:
+    """Get the group(s) an event type belongs to"""
+    groups = []
+    for group_name, types in EVENT_GROUPS.items():
+        if event_type in types:
+            groups.append(group_name)
+    return groups if groups else ['other']
+
+
+def event_type_penalty(type1: str, type2: str) -> float:
+    """
+    Calculate penalty between two event types.
+    Same type = 0, same group = 2, different groups = 5-10
+    """
+    if type1 == type2:
+        return 0.0
+    
+    if not type1 or not type2:
+        return 5.0  # Unknown type
+    
+    groups1 = set(_get_event_group(type1))
+    groups2 = set(_get_event_group(type2))
+    
+    # Check for overlap in groups
+    if groups1 & groups2:
+        return 2.0  # Same group, small penalty
+    
+    # Special cases for very different events
+    if ('shooting' in groups1 and 'defensive' in groups2) or \
+       ('defensive' in groups1 and 'shooting' in groups2):
+        return 10.0  # Very different
+    
+    return 5.0  # Moderately different
+
+
+# =============================================================================
+# PASS TYPE SIMILARITY
+# =============================================================================
+PASS_TYPES = ['S', 'L', 'T', 'C', 'F']  # Short, Long, Through, Cross, Flick
+
+def pass_type_penalty(type1: str, type2: str) -> float:
+    """Penalty between pass types"""
+    if type1 == type2:
+        return 0.0
+    if not type1 or not type2:
+        return 2.0
+    # Short vs Long = bigger difference
+    if (type1 == 'S' and type2 == 'L') or (type1 == 'L' and type2 == 'S'):
+        return 3.0
+    return 1.5
+
+
+# =============================================================================
+# SHOT TYPE SIMILARITY  
+# =============================================================================
+def shot_type_penalty(type1: str, type2: str) -> float:
+    """Penalty between shot types"""
+    if type1 == type2:
+        return 0.0
+    if not type1 or not type2:
+        return 2.0
+    return 2.0
+
+
+# =============================================================================
+# PRESSURE TYPE SIMILARITY
+# =============================================================================
+PRESSURE_TYPES = ['N', 'P', 'A']  # None, Passive, Active
+
+def pressure_type_penalty(type1: str, type2: str) -> float:
+    """Penalty between pressure types"""
+    if type1 == type2:
+        return 0.0
+    if not type1 or not type2:
+        return 1.0
+    # None vs Active = big difference
+    if (type1 == 'N' and type2 == 'A') or (type1 == 'A' and type2 == 'N'):
+        return 3.0
+    return 1.5
+
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+def euclidean_distance(x1: float, y1: float, x2: float, y2: float) -> float:
+    """Calculate 2D Euclidean distance"""
+    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+
+def get_ball_position(event: Dict) -> Tuple[float, float]:
+    """Extract ball position from event"""
+    ball = event.get('ball', [])
+    if ball and len(ball) > 0:
+        return (ball[0].get('x', 0), ball[0].get('y', 0))
+    
+    # Fallback to ballPosition if available
+    ball_pos = event.get('ballPosition', {})
+    if ball_pos:
+        return (ball_pos.get('x', 0), ball_pos.get('y', 0))
+    
+    return (0, 0)
+
+
+def get_event_type(event: Dict) -> str:
+    """Extract event type from event"""
+    poss_events = event.get('possessionEvents', {})
+    if poss_events:
+        return poss_events.get('possessionEventType', '') or ''
+    return event.get('eventType', '') or ''
+
+
+def get_pass_type(event: Dict) -> str:
+    """Extract pass type from event"""
+    poss_events = event.get('possessionEvents', {})
+    return poss_events.get('passType', '') or '' if poss_events else ''
+
+
+def get_shot_type(event: Dict) -> str:
+    """Extract shot type from event"""
+    poss_events = event.get('possessionEvents', {})
+    return poss_events.get('shotType', '') or '' if poss_events else ''
+
+
+def get_pressure_type(event: Dict) -> str:
+    """Extract pressure type from event"""
+    poss_events = event.get('possessionEvents', {})
+    return poss_events.get('pressureType', '') or '' if poss_events else ''
+
+
+def get_near_ball_players(event: Dict, ball_x: float, ball_y: float, 
+                          radius: float = NEAR_BALL_RADIUS) -> List[Tuple[float, float]]:
+    """Get positions of players near the ball"""
+    near_players = []
+    
+    for player in event.get('homePlayers', []):
+        px, py = player.get('x', 0), player.get('y', 0)
+        if euclidean_distance(px, py, ball_x, ball_y) <= radius:
+            near_players.append((px, py))
+    
+    for player in event.get('awayPlayers', []):
+        px, py = player.get('x', 0), player.get('y', 0)
+        if euclidean_distance(px, py, ball_x, ball_y) <= radius:
+            near_players.append((px, py))
+    
+    return near_players
+
+
+# =============================================================================
+# FEATURE EXTRACTION
+# =============================================================================
+def extract_event_features(event: Dict) -> Dict[str, Any]:
+    """
+    Extract all features from an event for DTW comparison.
+    Returns a feature dictionary.
+    """
+    ball_x, ball_y = get_ball_position(event)
+    
+    features = {
+        'ball_position': (ball_x, ball_y),
+        'event_type': get_event_type(event),
+        'near_players': get_near_ball_players(event, ball_x, ball_y),
+        # Optional features
+        'pass_type': get_pass_type(event),
+        'shot_type': get_shot_type(event),
+        'pressure_type': get_pressure_type(event)
+    }
+    
+    return features
+
+
+def extract_sequence_features(sequence: Dict) -> List[Dict[str, Any]]:
+    """Extract features from all events in a sequence"""
+    events = sequence.get('events', [])
+    return [extract_event_features(event) for event in events]
+
+
+# =============================================================================
+# DISTANCE FUNCTIONS
+# =============================================================================
+def player_formation_distance(players1: List[Tuple[float, float]], 
+                               players2: List[Tuple[float, float]]) -> float:
+    """
+    Calculate distance between two player formations.
+    Uses average nearest-neighbor distance.
+    """
+    if not players1 or not players2:
+        # If one has no near players, moderate penalty
+        if not players1 and not players2:
+            return 0.0
+        return 10.0
+    
+    # For each player in formation 1, find nearest in formation 2
+    total_dist = 0.0
+    
+    for p1 in players1:
+        min_dist = float('inf')
+        for p2 in players2:
+            d = euclidean_distance(p1[0], p1[1], p2[0], p2[1])
+            min_dist = min(min_dist, d)
+        total_dist += min_dist
+    
+    # Normalize by number of players
+    avg_dist = total_dist / len(players1)
+    
+    # Also check reverse direction for asymmetry
+    total_dist_rev = 0.0
+    for p2 in players2:
+        min_dist = float('inf')
+        for p1 in players1:
+            d = euclidean_distance(p1[0], p1[1], p2[0], p2[1])
+            min_dist = min(min_dist, d)
+        total_dist_rev += min_dist
+    
+    avg_dist_rev = total_dist_rev / len(players2)
+    
+    # Return average of both directions
+    return (avg_dist + avg_dist_rev) / 2
+
+
+def event_distance(features1: Dict[str, Any], features2: Dict[str, Any], 
+                   config: Optional[Dict] = None) -> float:
+    """
+    Calculate total distance between two events based on their features.
+    """
+    if config is None:
+        config = OPTIONAL_FEATURES
+    
+    total_distance = 0.0
+    
+    # 1. Ball position distance (Euclidean)
+    ball1 = features1['ball_position']
+    ball2 = features2['ball_position']
+    ball_dist = euclidean_distance(ball1[0], ball1[1], ball2[0], ball2[1])
+    total_distance += WEIGHTS['ball_position'] * ball_dist
+    
+    # 2. Event type penalty (scaled)
+    type_penalty = event_type_penalty(features1['event_type'], features2['event_type'])
+    total_distance += WEIGHTS['event_type'] * type_penalty
+    
+    # 3. Player formation distance
+    formation_dist = player_formation_distance(
+        features1['near_players'], 
+        features2['near_players']
+    )
+    total_distance += WEIGHTS['player_formation'] * formation_dist
+    
+    # 4. Optional: Pass type
+    if config.get('pass_type', False):
+        pass_penalty = pass_type_penalty(features1['pass_type'], features2['pass_type'])
+        total_distance += WEIGHTS['pass_type'] * pass_penalty
+    
+    # 5. Optional: Shot type
+    if config.get('shot_type', False):
+        shot_penalty = shot_type_penalty(features1['shot_type'], features2['shot_type'])
+        total_distance += WEIGHTS['shot_type'] * shot_penalty
+    
+    # 6. Optional: Pressure type
+    if config.get('pressure_type', False):
+        pressure_penalty = pressure_type_penalty(
+            features1['pressure_type'], 
+            features2['pressure_type']
+        )
+        total_distance += WEIGHTS['pressure_type'] * pressure_penalty
+    
+    return total_distance
+
+
+# =============================================================================
+# DTW CORE
+# =============================================================================
+def dtw_distance(seq1_features: List[Dict], seq2_features: List[Dict],
+                 config: Optional[Dict] = None) -> Tuple[float, List]:
+    """
+    Calculate DTW distance between two sequences of event features.
+    Uses FastDTW if available, otherwise falls back to basic DTW.
+    
+    Returns: (total_distance, alignment_path)
+    """
+    if not seq1_features or not seq2_features:
+        return (float('inf'), [])
+    
+    n, m = len(seq1_features), len(seq2_features)
+    
+    # Create distance function for fastdtw
+    def dist_func(idx1, idx2):
+        # Indices come as numpy arrays, extract scalar
+        i = int(idx1[0]) if hasattr(idx1, '__len__') else int(idx1)
+        j = int(idx2[0]) if hasattr(idx2, '__len__') else int(idx2)
+        return event_distance(seq1_features[i], seq2_features[j], config)
+    
+    if FASTDTW_AVAILABLE:
+        # Use fastdtw with index arrays
+        seq1_indices = np.arange(n).reshape(-1, 1)
+        seq2_indices = np.arange(m).reshape(-1, 1)
+        
+        distance, path = fastdtw(seq1_indices, seq2_indices, dist=dist_func)
+        return (distance, path)
+    else:
+        # Fallback: Basic DTW implementation
+        return _basic_dtw(seq1_features, seq2_features, config)
+
+
+def _basic_dtw(seq1_features: List[Dict], seq2_features: List[Dict],
+               config: Optional[Dict] = None) -> Tuple[float, List]:
+    """
+    Basic DTW implementation (O(n*m)) as fallback when fastdtw not available.
+    """
+    n, m = len(seq1_features), len(seq2_features)
+    
+    # Initialize cost matrix
+    dtw_matrix = np.full((n + 1, m + 1), np.inf)
+    dtw_matrix[0, 0] = 0
+    
+    # Fill the matrix
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = event_distance(seq1_features[i-1], seq2_features[j-1], config)
+            dtw_matrix[i, j] = cost + min(
+                dtw_matrix[i-1, j],      # insertion
+                dtw_matrix[i, j-1],      # deletion
+                dtw_matrix[i-1, j-1]     # match
+            )
+    
+    # Backtrack to find path
+    path = []
+    i, j = n, m
+    while i > 0 and j > 0:
+        path.append((i-1, j-1))
+        if i == 1:
+            j -= 1
+        elif j == 1:
+            i -= 1
+        else:
+            min_val = min(dtw_matrix[i-1, j], dtw_matrix[i, j-1], dtw_matrix[i-1, j-1])
+            if dtw_matrix[i-1, j-1] == min_val:
+                i, j = i-1, j-1
+            elif dtw_matrix[i-1, j] == min_val:
+                i -= 1
+            else:
+                j -= 1
+    
+    path.reverse()
+    return (dtw_matrix[n, m], path)
+
+
+# =============================================================================
+# SEQUENCE INDEX CACHE
+# =============================================================================
+_sequence_index: List[Dict] = []
+_cache_initialized = False
+
+
+def build_sequence_index(matches_data: List[Dict]) -> None:
+    """
+    Build and cache index of all sequences from all matches.
+    Each entry contains sequence features pre-computed for fast comparison.
+    """
+    global _sequence_index, _cache_initialized
+    
+    print("[DTW] Building sequence index...")
+    _sequence_index = []
+    
+    for match in matches_data:
+        match_id = match.get('matchId', match.get('id', ''))
+        home_team = match.get('homeTeam', {})
+        away_team = match.get('awayTeam', {})
+        
+        sequences = match.get('sequences', match.get('plays', []))
+        
+        for seq in sequences:
+            seq_id = seq.get('sequenceId', seq.get('sequence', 0))
+            events = seq.get('events', [])
+            
+            if not events:
+                continue
+            
+            # Pre-compute features for all events
+            features = [extract_event_features(e) for e in events]
+            
+            _sequence_index.append({
+                'matchId': str(match_id),
+                'sequenceId': seq_id,
+                'features': features,
+                'events': events,  # Keep original events for result
+                'homeTeam': home_team,
+                'awayTeam': away_team,
+                'time': seq.get('time', ''),
+                'setpieceType': seq.get('setpieceType', 'Open Play')
+            })
+    
+    _cache_initialized = True
+    print(f"[DTW] Index built with {len(_sequence_index)} sequences")
+
+
+def ensure_index_initialized() -> None:
+    """Ensure the sequence index is initialized"""
+    global _cache_initialized
+    
+    if not _cache_initialized:
+        # Try to load from MatchRepository
+        try:
+            from DSPFinalFIFA.FIFA.fifa import MatchRepository
+            matches = MatchRepository.get_all_matches()
+            
+            matches_data = []
+            for match in matches:
+                plays = match.get_all_plays()
+                # Group by sequence
+                sequences_dict = {}
+                for play in plays:
+                    seq_id = play.get('sequence')
+                    if seq_id is None:
+                        continue
+                    if seq_id not in sequences_dict:
+                        sequences_dict[seq_id] = {
+                            'sequenceId': seq_id,
+                            'events': [],
+                            'time': play.get('time', ''),
+                            'setpieceType': play.get('setpieceLabel', 'Open Play')
+                        }
+                    sequences_dict[seq_id]['events'].append(play)
+                
+                matches_data.append({
+                    'matchId': match.match_id,
+                    'homeTeam': match.home_team.to_dict() if match.home_team else {},
+                    'awayTeam': match.away_team.to_dict() if match.away_team else {},
+                    'sequences': list(sequences_dict.values())
+                })
+            
+            build_sequence_index(matches_data)
+        except Exception as e:
+            print(f"[DTW] Error initializing index: {e}")
+            _sequence_index = []
+            _cache_initialized = True
+
+
+# =============================================================================
+# SEARCH FUNCTION
+# =============================================================================
+def search_similar_sequences_dtw(query_sequence: Dict, 
+                                  top_n: int = TOP_N,
+                                  config: Optional[Dict] = None,
+                                  exclude_match_id: str = None,
+                                  exclude_seq_id: int = None) -> List[Dict]:
+    """
+    Search for sequences similar to the query using DTW.
+    
+    Args:
+        query_sequence: Dict with 'events' list
+        top_n: Number of results to return
+        config: Optional feature configuration
+        exclude_match_id: Match ID to exclude from results
+        exclude_seq_id: Sequence ID to exclude (used with exclude_match_id)
+    
+    Returns:
+        List of similar sequences with distance and similarity scores
+    """
+    ensure_index_initialized()
+    
+    if config is None:
+        config = OPTIONAL_FEATURES
+    
+    # Extract features from query
+    query_events = query_sequence.get('events', [])
+    if not query_events:
+        return []
+    
+    query_features = [extract_event_features(e) for e in query_events]
+    
+    # Compare with all indexed sequences
+    results = []
+    
+    for entry in _sequence_index:
+        # Skip excluded sequence
+        if exclude_match_id and exclude_seq_id is not None:
+            if entry['matchId'] == exclude_match_id and entry['sequenceId'] == exclude_seq_id:
+                continue
+        
+        # Calculate DTW distance
+        distance, path = dtw_distance(query_features, entry['features'], config)
+        
+        # Normalize distance to similarity score (0-1)
+        # Use sequence length for normalization
+        path_length = max(len(query_features), len(entry['features']))
+        normalized_distance = distance / path_length if path_length > 0 else distance
+        
+        # Convert to similarity (higher = more similar)
+        similarity = max(0, 1 - (normalized_distance / MAX_DISTANCE))
+        
+        results.append({
+            'matchId': entry['matchId'],
+            'sequenceId': entry['sequenceId'],
+            'distance': distance,
+            'similarity': similarity,
+            'events': _lightweight_events(entry['events']),
+            'homeTeam': entry['homeTeam'],
+            'awayTeam': entry['awayTeam'],
+            'time': entry['time'],
+            'setpieceType': entry['setpieceType'],
+            'alignmentPath': path
+        })
+    
+    # Sort by distance (ascending) and take top N
+    results.sort(key=lambda x: x['distance'])
+    
+    return results[:top_n]
+
+
+def _lightweight_events(events: List[Dict]) -> List[Dict]:
+    """Return lightweight version of events without heavy player arrays"""
+    lightweight = []
+    for event in events:
+        poss = event.get('possessionEvents', {})
+        game = event.get('gameEvents', {})
+        
+        ball = event.get('ball', [])
+        ball_pos = {'x': ball[0].get('x', 0), 'y': ball[0].get('y', 0)} if ball else event.get('ballPosition', {})
+        
+        lightweight.append({
+            'eventType': poss.get('possessionEventType', game.get('gameEventType', '')),
+            'eventLabel': poss.get('possessionEventType', game.get('gameEventType', '')),
+            'playerName': game.get('playerName', ''),
+            'playerId': game.get('playerId', ''),
+            'teamId': game.get('teamId', ''),
+            'teamName': game.get('teamName', ''),
+            'time': game.get('startFormattedGameClock', ''),
+            'ballPosition': ball_pos,
+            'isGoal': poss.get('shotOutcomeType', '') == 'G'
+        })
+    
+    return lightweight
+
+
+# =============================================================================
+# UTILITY: Compare two specific sequences
+# =============================================================================
+def compare_sequences(seq1: Dict, seq2: Dict, config: Optional[Dict] = None) -> Dict:
+    """
+    Compare two specific sequences and return detailed comparison.
+    Useful for debugging or detailed analysis.
+    """
+    if config is None:
+        config = OPTIONAL_FEATURES
+    
+    features1 = [extract_event_features(e) for e in seq1.get('events', [])]
+    features2 = [extract_event_features(e) for e in seq2.get('events', [])]
+    
+    distance, path = dtw_distance(features1, features2, config)
+    
+    # Calculate per-event distances along the path
+    event_distances = []
+    for i, j in path:
+        if i < len(features1) and j < len(features2):
+            d = event_distance(features1[i], features2[j], config)
+            event_distances.append({
+                'seq1_index': i,
+                'seq2_index': j,
+                'distance': d
+            })
+    
+    path_length = max(len(features1), len(features2))
+    normalized_distance = distance / path_length if path_length > 0 else distance
+    similarity = max(0, 1 - (normalized_distance / MAX_DISTANCE))
+    
+    return {
+        'distance': distance,
+        'similarity': similarity,
+        'path': path,
+        'event_distances': event_distances,
+        'seq1_length': len(features1),
+        'seq2_length': len(features2)
+    }
+
+
+# =============================================================================
+# CONFIGURATION HELPERS
+# =============================================================================
+def set_optional_feature(feature: str, enabled: bool) -> None:
+    """Enable or disable an optional feature"""
+    if feature in OPTIONAL_FEATURES:
+        OPTIONAL_FEATURES[feature] = enabled
+        print(f"[DTW] Feature '{feature}' set to {enabled}")
+
+
+def set_weight(feature: str, weight: float) -> None:
+    """Set the weight for a feature"""
+    if feature in WEIGHTS:
+        WEIGHTS[feature] = weight
+        print(f"[DTW] Weight for '{feature}' set to {weight}")
+
+
+def get_config() -> Dict:
+    """Get current configuration"""
+    return {
+        'weights': WEIGHTS.copy(),
+        'optional_features': OPTIONAL_FEATURES.copy(),
+        'top_n': TOP_N,
+        'near_ball_radius': NEAR_BALL_RADIUS
+    }
+
+
+def reset_cache() -> None:
+    """Reset the sequence index cache"""
+    global _sequence_index, _cache_initialized
+    _sequence_index = []
+    _cache_initialized = False
+    print("[DTW] Cache reset")

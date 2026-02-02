@@ -185,7 +185,7 @@ class App {
         this.passSequenceList = document.getElementById('passSequenceList');
         
         // Search elements
-        this.searchEventBtn = document.getElementById('searchEventBtn');
+        this.searchMethodSelect = document.getElementById('searchMethodSelect');
         this.searchSequenceBtn = document.getElementById('searchSequenceBtn');
         this.searchResults = document.getElementById('searchResults');
         this.searchBackBtn = document.getElementById('searchBackBtn');
@@ -220,10 +220,7 @@ class App {
             this.pitchModal.querySelector('.modal-overlay')?.addEventListener('click', () => this._closePitchModal());
         }
         
-        // Search buttons
-        if (this.searchEventBtn) {
-            this.searchEventBtn.addEventListener('click', () => this._searchSimilarEvent());
-        }
+        // Search button - uses selected method
         if (this.searchSequenceBtn) {
             this.searchSequenceBtn.addEventListener('click', () => this._searchSimilarSequence());
         }
@@ -459,6 +456,7 @@ class App {
             <span class="seq-time">${sequence.time || ''}</span>
             ${hasGoal ? '<span class="goal-indicator">⚽ GOAL</span>' : ''}
             <span class="seq-count">${sequence.events.length} events</span>
+            <button class="view-seq-btn">View →</button>
             <button class="expand-btn">${hasGoal ? '▲' : '▼'}</button>
         `;
         
@@ -477,6 +475,14 @@ class App {
         
         container.appendChild(header);
         container.appendChild(eventsList);
+        
+        // View sequence button - opens pitch modal with first event
+        header.querySelector('.view-seq-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (sequence.events && sequence.events.length > 0) {
+                this._openPitchModal(sequence.events[0], sequence);
+            }
+        });
         
         // Toggle expansion with lazy loading
         header.querySelector('.expand-btn').addEventListener('click', (e) => {
@@ -514,15 +520,9 @@ class App {
             <span class="event-player">${event.playerName || 'Unknown'}</span>
             <span class="event-type">${event.isGoal ? 'GOAL!' : (event.eventLabel || event.eventType)}</span>
             ${event.outcome ? `<span class="event-outcome">${event.outcome}</span>` : ''}
-            <button class="view-pitch-btn">View →</button>
         `;
         
-        // Click to view on pitch
-        item.querySelector('.view-pitch-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._openPitchModal(event, sequence);
-        });
-        
+        // Click row to view on pitch
         item.addEventListener('click', () => this._openPitchModal(event, sequence));
         
         return item;
@@ -772,48 +772,16 @@ class App {
         `;
     }
     
-    async _searchSimilarEvent() {
-        if (!this._currentEvent || !this._currentMatch) return;
-        
-        // Show loading
-        this.searchEventBtn.classList.add('loading');
-        this.searchEventBtn.disabled = true;
-        this.searchSequenceBtn.disabled = true;
-        this._showSearchLoading();
-        
-        try {
-            const response = await fetch('/api/search/event/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    event: this._currentEvent,
-                    matchId: this._currentMatch.id,
-                    sequenceId: this._currentSequence?.sequenceId,
-                    eventIndex: this._currentSequence?.events.indexOf(this._currentEvent),
-                    topN: 10
-                })
-            });
-            
-            const data = await response.json();
-            this._enterSearchMode('event', data.results);
-            
-        } catch (error) {
-            console.error('Search error:', error);
-            this._showSearchError();
-        } finally {
-            this.searchEventBtn.classList.remove('loading');
-            this.searchEventBtn.disabled = false;
-            this.searchSequenceBtn.disabled = false;
-        }
-    }
-    
     async _searchSimilarSequence() {
         if (!this._currentSequence || !this._currentMatch) return;
         
+        // Get selected search method
+        const method = this.searchMethodSelect?.value || 'dtw';
+        
         // Show loading
         this.searchSequenceBtn.classList.add('loading');
-        this.searchEventBtn.disabled = true;
         this.searchSequenceBtn.disabled = true;
+        if (this.searchMethodSelect) this.searchMethodSelect.disabled = true;
         this._showSearchLoading();
         
         try {
@@ -824,6 +792,7 @@ class App {
                     events: this._currentSequence.events,
                     matchId: this._currentMatch.id,
                     sequenceId: this._currentSequence.sequenceId,
+                    method: method,
                     topN: 10
                 })
             });
@@ -836,8 +805,8 @@ class App {
             this._showSearchError();
         } finally {
             this.searchSequenceBtn.classList.remove('loading');
-            this.searchEventBtn.disabled = false;
             this.searchSequenceBtn.disabled = false;
+            if (this.searchMethodSelect) this.searchMethodSelect.disabled = false;
         }
     }
     

@@ -1018,12 +1018,11 @@ def api_search_event(request):
 
 @csrf_exempt
 def api_search_sequence(request):
-    """API: Search for similar sequences using TF-IDF"""
+    """API: Search for similar sequences using DTW or TF-IDF"""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
     
     import json
-    from .TF_IDF import search_similar_sequences
     
     try:
         data = json.loads(request.body)
@@ -1037,19 +1036,36 @@ def api_search_sequence(request):
     exclude_match_id = data.get('matchId')
     exclude_seq_id = data.get('sequenceId')
     top_n = data.get('topN', 10)
+    method = data.get('method', 'dtw')  # Default to DTW
     
-    results = search_similar_sequences(
-        query_events=query_events,
-        exclude_match_id=exclude_match_id,
-        exclude_seq_id=exclude_seq_id,
-        top_n=top_n
-    )
+    if method == 'dtw':
+        # Use DTW search
+        from .DTW import search_similar_sequences_dtw
+        
+        query_sequence = {'events': query_events}
+        results = search_similar_sequences_dtw(
+            query_sequence=query_sequence,
+            top_n=top_n,
+            exclude_match_id=str(exclude_match_id) if exclude_match_id else None,
+            exclude_seq_id=exclude_seq_id
+        )
+    else:
+        # Use TF-IDF search
+        from .TF_IDF import search_similar_sequences
+        
+        results = search_similar_sequences(
+            query_events=query_events,
+            exclude_match_id=exclude_match_id,
+            exclude_seq_id=exclude_seq_id,
+            top_n=top_n
+        )
     
     return JsonResponse({
         'query': {
             'setpieceType': query_events[0].get('setpieceLabel', '') if query_events else '',
             'eventCount': len(query_events),
-            'time': query_events[0].get('time', '') if query_events else ''
+            'time': query_events[0].get('time', '') if query_events else '',
+            'method': method
         },
         'results': results,
         'count': len(results)
