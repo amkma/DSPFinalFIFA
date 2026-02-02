@@ -89,7 +89,7 @@
                             <button class="search-btn" id="searchEventBtn">🔍 Search Similar Event</button>
                             <button class="search-btn" id="searchSequenceBtn">🔍 Search Similar Sequence</button>
                         </div>
-                        <div class="pitch-legend">
+                        <div class="pitch-legend" id="pitchLegend">
                             <div class="legend-item">
                                 <span class="legend-dot home"></span>
                                 <span>Home Team</span>
@@ -109,9 +109,13 @@
                                 <h4>Similar Play</h4>
                                 <span class="similarity-badge" id="similarityScore">0.00</span>
                             </div>
+                            <div class="comparison-match-info" id="comparisonMatchInfo"></div>
                             <div class="pitch-container comparison-pitch">
                                 <canvas id="comparisonCanvas"></canvas>
                                 <div class="player-tooltip" id="comparisonTooltip"></div>
+                            </div>
+                            <div class="comparison-events" id="comparisonEvents">
+                                <!-- Events list rendered by JS -->
                             </div>
                         </div>
                     </div>

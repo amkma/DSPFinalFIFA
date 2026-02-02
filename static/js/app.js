@@ -192,6 +192,10 @@ class App {
         this.panelTitle = document.getElementById('panelTitle');
         this.comparisonSection = document.getElementById('comparisonSection');
         this.similarityScore = document.getElementById('similarityScore');
+        this.comparisonMatchInfo = document.getElementById('comparisonMatchInfo');
+        this.comparisonEvents = document.getElementById('comparisonEvents');
+        this.searchButtons = document.getElementById('searchButtons');
+        this.pitchLegend = document.getElementById('pitchLegend');
         
         // Search state
         this._searchMode = false;
@@ -570,6 +574,20 @@ class App {
     }
 
     _openPitchModal(event, sequence) {
+        // Reset any previous search state when opening a new event
+        if (this._searchMode) {
+            this._exitSearchMode();
+        }
+        // Also hide comparison section even if not in search mode
+        if (this.comparisonSection) {
+            this.comparisonSection.style.display = 'none';
+        }
+        this._comparisonVisualizer = null;
+        
+        // Restore search buttons and legend
+        if (this.searchButtons) this.searchButtons.style.display = 'flex';
+        if (this.pitchLegend) this.pitchLegend.style.display = 'flex';
+        
         // Store current event and sequence for search
         this._currentEvent = event;
         this._currentSequence = sequence;
@@ -737,6 +755,12 @@ class App {
     // =========================================================================
     
     _showSearchLoading() {
+        // Reset any previous comparison
+        if (this.comparisonSection) {
+            this.comparisonSection.style.display = 'none';
+        }
+        this._comparisonVisualizer = null;
+        
         // Show loading in results panel
         this.passSequenceList.style.display = 'none';
         this.searchResults.style.display = 'flex';
@@ -847,10 +871,17 @@ class App {
         this._searchType = null;
         this._searchResults = null;
         
-        // Hide comparison
+        // Hide and reset comparison section
         if (this.comparisonSection) {
             this.comparisonSection.style.display = 'none';
         }
+        
+        // Restore search buttons and legend
+        if (this.searchButtons) this.searchButtons.style.display = 'flex';
+        if (this.pitchLegend) this.pitchLegend.style.display = 'flex';
+        
+        // Destroy comparison visualizer to force fresh canvas
+        this._comparisonVisualizer = null;
         
         // Reset UI
         this.passSequenceList.style.display = 'flex';
@@ -858,6 +889,12 @@ class App {
         this.searchBackBtn.style.display = 'none';
         this.panelTitle.textContent = 'Pass Sequence';
         this.searchResults.innerHTML = '';
+        
+        // Reset scroll position
+        const pitchWrapper = document.querySelector('.pitch-wrapper');
+        if (pitchWrapper) {
+            pitchWrapper.scrollTop = 0;
+        }
     }
     
     _renderSearchResults(results) {
@@ -922,9 +959,23 @@ class App {
     _showComparison(result) {
         if (!this.comparisonSection) return;
         
+        // Store for later use when clicking events
+        this._currentComparisonResult = result;
+        
         // Show comparison section
         this.comparisonSection.style.display = 'block';
         this.similarityScore.textContent = result.similarity.toFixed(2);
+        
+        // Hide search buttons and legend when showing comparison
+        if (this.searchButtons) this.searchButtons.style.display = 'none';
+        if (this.pitchLegend) this.pitchLegend.style.display = 'none';
+        
+        // Show match info
+        if (this.comparisonMatchInfo) {
+            const homeName = result.homeTeam?.name || 'Home';
+            const awayName = result.awayTeam?.name || 'Away';
+            this.comparisonMatchInfo.textContent = `${homeName} vs ${awayName}`;
+        }
         
         // Scroll to comparison section
         setTimeout(() => {
@@ -946,14 +997,13 @@ class App {
         
         if (!comparisonEvent) return;
         
-        // Filter to key players
-        const keyIds = comparisonEvent.keyPlayerIds || [];
-        const filteredHome = (comparisonEvent.homePlayers || []).filter(p => keyIds.includes(p.playerId));
-        const filteredAway = (comparisonEvent.awayPlayers || []).filter(p => keyIds.includes(p.playerId));
+        // Render events list
+        this._renderComparisonEvents(comparisonSequence.events || [], comparisonEvent);
         
+        // Players are already filtered to key players by server
         const snapshot = {
-            homePlayers: filteredHome,
-            awayPlayers: filteredAway,
+            homePlayers: comparisonEvent.homePlayers || [],
+            awayPlayers: comparisonEvent.awayPlayers || [],
             ball: comparisonEvent.ballPosition
         };
         
@@ -976,6 +1026,10 @@ class App {
             eventMarker: comparisonEvent.eventLabel
         };
         
+        console.log('Comparison eventData:', eventData);
+        console.log('Comparison event:', comparisonEvent);
+        console.log('Result:', result);
+        
         // Initialize comparison visualizer after DOM is ready
         setTimeout(() => {
             if (!this._comparisonVisualizer) {
@@ -983,6 +1037,77 @@ class App {
             }
             this._comparisonVisualizer.visualize(eventData);
         }, 150);
+    }
+    
+    _renderComparisonEvents(events, activeEvent) {
+        if (!this.comparisonEvents) return;
+        
+        this.comparisonEvents.innerHTML = '';
+        
+        if (!events || events.length === 0) {
+            this.comparisonEvents.innerHTML = '<div class="no-events">No events</div>';
+            return;
+        }
+        
+        events.forEach((event, index) => {
+            const isActive = event === activeEvent;
+            const item = document.createElement('div');
+            item.className = `comparison-event-item${isActive ? ' active' : ''}`;
+            item.style.cursor = 'pointer';
+            
+            const icon = event.isGoal ? '⚽' : (EVENT_ICONS[event.eventLabel] || EVENT_ICONS['Unknown']);
+            const time = event.time || '';
+            const player = event.playerName || 'Unknown';
+            
+            item.innerHTML = `
+                <span class="comparison-event-icon">${icon}</span>
+                <span class="comparison-event-player">${player}</span>
+                <span class="comparison-event-time">${time}</span>
+            `;
+            
+            // Click to update comparison pitch
+            item.addEventListener('click', () => {
+                // Update active state
+                this.comparisonEvents.querySelectorAll('.comparison-event-item').forEach(el => el.classList.remove('active'));
+                item.classList.add('active');
+                
+                // Update the comparison pitch with this event
+                this._updateComparisonPitch(event, events);
+            });
+            
+            this.comparisonEvents.appendChild(item);
+        });
+    }
+    
+    _updateComparisonPitch(event, allEvents) {
+        if (!this._comparisonVisualizer) return;
+        
+        // Build snapshot from event (already filtered to key players by server)
+        const snapshot = {
+            homePlayers: event.homePlayers || [],
+            awayPlayers: event.awayPlayers || [],
+            ball: event.ballPosition
+        };
+        
+        // Build preceding events
+        const eventIndex = allEvents.indexOf(event);
+        const precedingEvents = allEvents.slice(Math.max(0, eventIndex - 5), eventIndex + 1).map(e => ({
+            eventType: e.eventLabel || e.eventType,
+            playerName: e.playerName,
+            ballPosition: e.ballPosition,
+            teamId: String(e.teamId)
+        }));
+        
+        const eventData = {
+            event: { ...event, ballPosition: event.ballPosition },
+            snapshot: snapshot,
+            precedingEvents: precedingEvents,
+            homeTeam: this._currentComparisonResult?.homeTeam,
+            awayTeam: this._currentComparisonResult?.awayTeam,
+            eventMarker: event.eventLabel
+        };
+        
+        this._comparisonVisualizer.visualize(eventData);
     }
 }
 
