@@ -981,7 +981,7 @@ def api_search_event(request):
         return JsonResponse({'error': 'POST required'}, status=405)
     
     import json
-    from .search import search_similar_events
+    from .TF_IDF import search_similar_events
     
     try:
         data = json.loads(request.body)
@@ -1023,7 +1023,7 @@ def api_search_sequence(request):
         return JsonResponse({'error': 'POST required'}, status=405)
     
     import json
-    from .search import search_similar_sequences
+    from .TF_IDF import search_similar_sequences
     
     try:
         data = json.loads(request.body)
