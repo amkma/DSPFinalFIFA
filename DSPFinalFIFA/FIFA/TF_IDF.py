@@ -7,8 +7,6 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import List, Dict, Tuple, Optional
-from pathlib import Path
-import json
 
 
 # =============================================================================
@@ -91,6 +89,16 @@ def get_players_near_ball(players: List[Dict], ball_x: float, ball_y: float,
     return near_players
 
 
+def _get_ball_position(event: Dict) -> Tuple[Optional[Dict], float, float]:
+    """Return ball position dict and coordinates when available."""
+    ball_pos = event.get('ballPosition')
+    if not ball_pos:
+        return None, 0, 0
+    ball_x = ball_pos.get('x', 0)
+    ball_y = ball_pos.get('y', 0)
+    return ball_pos, ball_x, ball_y
+
+
 def get_player_zones(players: List[Dict]) -> str:
     """Convert list of player positions to zone string"""
     zones = set()
@@ -139,11 +147,8 @@ def event_to_text(event: Dict) -> str:
         parts.append(f"outcome_{outcome}")
     
     # Ball position zone (detailed)
-    ball_pos = event.get('ballPosition')
-    ball_x, ball_y = 0, 0
+    ball_pos, ball_x, ball_y = _get_ball_position(event)
     if ball_pos:
-        ball_x = ball_pos.get('x', 0)
-        ball_y = ball_pos.get('y', 0)
         zone = get_pitch_zone_detailed(ball_x, ball_y)
         parts.append(f"ballzone_{zone}")
         parts.append(f"ballzone_{zone}")  # Double weight for location
@@ -255,20 +260,14 @@ def sequence_to_text(events: List[Dict]) -> str:
     parts.append(f"length_{length_cat}")
     
     # Start zone (first event ball position) - detailed
-    first_ball = events[0].get('ballPosition')
-    start_x, start_y = 0, 0
+    first_ball, start_x, start_y = _get_ball_position(events[0])
     if first_ball:
-        start_x = first_ball.get('x', 0)
-        start_y = first_ball.get('y', 0)
         start_zone = get_pitch_zone_detailed(start_x, start_y)
         parts.append(f"start_{start_zone}")
     
     # End zone (last event ball position) - detailed
-    last_ball = events[-1].get('ballPosition')
-    end_x, end_y = 0, 0
+    last_ball, end_x, end_y = _get_ball_position(events[-1])
     if last_ball:
-        end_x = last_ball.get('x', 0)
-        end_y = last_ball.get('y', 0)
         end_zone = get_pitch_zone_detailed(end_x, end_y)
         parts.append(f"end_{end_zone}")
     
@@ -310,11 +309,6 @@ def sequence_to_text(events: List[Dict]) -> str:
 # =============================================================================
 # CACHE INITIALIZATION
 # =============================================================================
-def _get_data_dir() -> Path:
-    """Get the data directory path"""
-    return Path(__file__).resolve().parent.parent.parent / 'FIFA_datan'
-
-
 def _load_all_plays() -> Tuple[List[Dict], List[Dict]]:
     """
     Load all plays from all matches.
@@ -437,6 +431,10 @@ def initialize_cache():
 # =============================================================================
 def _lightweight_event(event: Dict) -> Dict:
     """Return a lightweight version of event without heavy player arrays"""
+    key_ids = event.get('keyPlayerIds', [])
+    home_players = [p for p in event.get('homePlayers', []) if p.get('playerId') in key_ids]
+    away_players = [p for p in event.get('awayPlayers', []) if p.get('playerId') in key_ids]
+
     return {
         'index': event.get('index'),
         'eventId': event.get('eventId'),
@@ -455,10 +453,10 @@ def _lightweight_event(event: Dict) -> Dict:
         'outcome': event.get('outcome'),
         'isGoal': event.get('isGoal'),
         'ballPosition': event.get('ballPosition'),
-        'keyPlayerIds': event.get('keyPlayerIds', []),
+        'keyPlayerIds': key_ids,
         # Include only key players, not all 22
-        'homePlayers': [p for p in event.get('homePlayers', []) if p.get('playerId') in event.get('keyPlayerIds', [])],
-        'awayPlayers': [p for p in event.get('awayPlayers', []) if p.get('playerId') in event.get('keyPlayerIds', [])]
+        'homePlayers': home_players,
+        'awayPlayers': away_players
     }
 
 

@@ -60,11 +60,8 @@ EVENT_GROUPS = {
 }
 
 def _get_event_group(event_type: str) -> List[str]:
-    """Get the group(s) an event type belongs to"""
-    groups = []
-    for group_name, types in EVENT_GROUPS.items():
-        if event_type in types:
-            groups.append(group_name)
+    """Get the group(s) an event type belongs to."""
+    groups = [group_name for group_name, types in EVENT_GROUPS.items() if event_type in types]
     return groups if groups else ['other']
 
 
@@ -149,7 +146,7 @@ def euclidean_distance(x1: float, y1: float, x2: float, y2: float) -> float:
 
 
 def get_ball_position(event: Dict) -> Tuple[float, float]:
-    """Extract ball position from event"""
+    """Extract ball position from event in a normalized (x, y) tuple."""
     # 1. Processed format (dict)
     ball_pos = event.get('ballPosition')
     if ball_pos:
@@ -157,44 +154,54 @@ def get_ball_position(event: Dict) -> Tuple[float, float]:
 
     # 2. Raw format (list)
     ball = event.get('ball', [])
-    if ball and len(ball) > 0:
+    if ball:
         return (ball[0].get('x', 0), ball[0].get('y', 0))
 
     return (0, 0)
 
 
-def get_event_type(event: Dict) -> str:
-    """Extract event type from event"""
-    # 1. Processed format
-    if 'eventType' in event:
-        return event['eventType'] or ''
+def _get_ball_position_dict(event: Dict) -> Optional[Dict[str, float]]:
+    """Extract ball position as a dict when present, otherwise return None."""
+    ball_pos = event.get('ballPosition')
+    if ball_pos:
+        return {'x': ball_pos.get('x', 0), 'y': ball_pos.get('y', 0)}
 
-    # 2. Raw format
-    poss_events = event.get('possessionEvents', {})
-    if poss_events:
-        return poss_events.get('possessionEventType', '') or ''
-    return event.get('eventType', '') or ''
+    ball = event.get('ball', [])
+    if ball:
+        return {'x': ball[0].get('x', 0), 'y': ball[0].get('y', 0)}
+
+    return None
+
+
+def _get_event_field(event: Dict, field: str, possession_field: Optional[str] = None) -> str:
+    """Extract event field from processed or raw possessionEvents format."""
+    if field in event:
+        return event[field] or ''
+
+    poss_events = event.get('possessionEvents') or {}
+    if possession_field:
+        return poss_events.get(possession_field, '') or ''
+    return poss_events.get(field, '') or ''
+
+
+def get_event_type(event: Dict) -> str:
+    """Extract event type from processed or raw event format."""
+    return _get_event_field(event, 'eventType', possession_field='possessionEventType')
 
 
 def get_pass_type(event: Dict) -> str:
-    """Extract pass type from event"""
-    if 'passType' in event: return event['passType'] # Processed
-    poss_events = event.get('possessionEvents', {})
-    return poss_events.get('passType', '') or '' if poss_events else ''
+    """Extract pass type from event."""
+    return _get_event_field(event, 'passType')
 
 
 def get_shot_type(event: Dict) -> str:
-    """Extract shot type from event"""
-    if 'shotType' in event: return event['shotType'] # Processed
-    poss_events = event.get('possessionEvents', {})
-    return poss_events.get('shotType', '') or '' if poss_events else ''
+    """Extract shot type from event."""
+    return _get_event_field(event, 'shotType')
 
 
 def get_pressure_type(event: Dict) -> str:
-    """Extract pressure type from event"""
-    if 'pressureType' in event: return event['pressureType'] # Processed
-    poss_events = event.get('possessionEvents', {})
-    return poss_events.get('pressureType', '') or '' if poss_events else ''
+    """Extract pressure type from event."""
+    return _get_event_field(event, 'pressureType')
 
 
 def get_near_ball_players(event: Dict, ball_x: float, ball_y: float,
@@ -248,11 +255,23 @@ def extract_sequence_features(sequence: Dict) -> List[Dict[str, Any]]:
 # =============================================================================
 # DISTANCE FUNCTIONS
 # =============================================================================
+def _avg_nearest_distance(source: List[Tuple[float, float]],
+                          target: List[Tuple[float, float]]) -> float:
+    """Average nearest-neighbor distance from each source to target."""
+    total_dist = 0.0
+    for src in source:
+        min_dist = float('inf')
+        for tgt in target:
+            min_dist = min(min_dist, euclidean_distance(src[0], src[1], tgt[0], tgt[1]))
+        total_dist += min_dist
+    return total_dist / len(source)
+
+
 def player_formation_distance(players1: List[Tuple[float, float]],
                                players2: List[Tuple[float, float]]) -> float:
     """
     Calculate distance between two player formations.
-    Uses average nearest-neighbor distance.
+    Uses average nearest-neighbor distance in both directions.
     """
     if not players1 or not players2:
         # If one has no near players, moderate penalty
@@ -260,29 +279,8 @@ def player_formation_distance(players1: List[Tuple[float, float]],
             return 0.0
         return 10.0
 
-    # For each player in formation 1, find nearest in formation 2
-    total_dist = 0.0
-
-    for p1 in players1:
-        min_dist = float('inf')
-        for p2 in players2:
-            d = euclidean_distance(p1[0], p1[1], p2[0], p2[1])
-            min_dist = min(min_dist, d)
-        total_dist += min_dist
-
-    # Normalize by number of players
-    avg_dist = total_dist / len(players1)
-
-    # Also check reverse direction for asymmetry
-    total_dist_rev = 0.0
-    for p2 in players2:
-        min_dist = float('inf')
-        for p1 in players1:
-            d = euclidean_distance(p1[0], p1[1], p2[0], p2[1])
-            min_dist = min(min_dist, d)
-        total_dist_rev += min_dist
-
-    avg_dist_rev = total_dist_rev / len(players2)
+    avg_dist = _avg_nearest_distance(players1, players2)
+    avg_dist_rev = _avg_nearest_distance(players2, players1)
 
     # Return average of both directions
     return (avg_dist + avg_dist_rev) / 2
@@ -421,6 +419,41 @@ _sequence_index: List[Dict] = []
 _cache_initialized = False
 
 
+def _build_matches_data_from_repository() -> List[Dict]:
+    """Load matches and shape them into the DTW indexing format."""
+    from DSPFinalFIFA.FIFA.fifa import MatchRepository
+
+    matches = MatchRepository.get_all_matches()
+    matches_data = []
+
+    for match in matches:
+        plays = match.get_all_plays()
+
+        # Group plays by sequence
+        sequences_dict = {}
+        for play in plays:
+            seq_id = play.get('sequence')
+            if seq_id is None:
+                continue
+            if seq_id not in sequences_dict:
+                sequences_dict[seq_id] = {
+                    'sequenceId': seq_id,
+                    'events': [],
+                    'time': play.get('time', ''),
+                    'setpieceType': play.get('setpieceLabel', 'Open Play')
+                }
+            sequences_dict[seq_id]['events'].append(play)
+
+        matches_data.append({
+            'matchId': match.match_id,
+            'homeTeam': match.home_team.to_dict() if match.home_team else {},
+            'awayTeam': match.away_team.to_dict() if match.away_team else {},
+            'sequences': list(sequences_dict.values())
+        })
+
+    return matches_data
+
+
 def build_sequence_index(matches_data: List[Dict]) -> None:
     """
     Build and cache index of all sequences from all matches.
@@ -446,7 +479,7 @@ def build_sequence_index(matches_data: List[Dict]) -> None:
                 continue
 
             # Pre-compute features for all events
-            features = [extract_event_features(e) for e in events]
+            features = extract_sequence_features({'events': events})
 
             _sequence_index.append({
                 'matchId': str(match_id),
@@ -465,44 +498,26 @@ def build_sequence_index(matches_data: List[Dict]) -> None:
 
 def ensure_index_initialized() -> None:
     """Ensure the sequence index is initialized"""
-    global _cache_initialized
+    global _cache_initialized, _sequence_index
 
-    if not _cache_initialized:
-        # Try to load from MatchRepository
-        try:
-            from DSPFinalFIFA.FIFA.fifa import MatchRepository
-            matches = MatchRepository.get_all_matches()
+    # Check both flag and actual data (in case module was reloaded but data persists)
+    if _cache_initialized and len(_sequence_index) > 0:
+        return  # Already initialized
+    
+    if len(_sequence_index) > 0:
+        # Data exists but flag was reset (module reload)
+        _cache_initialized = True
+        print(f"[DTW] Using existing index ({len(_sequence_index)} sequences)")
+        return
 
-            matches_data = []
-            for match in matches:
-                plays = match.get_all_plays()
-                # Group by sequence
-                sequences_dict = {}
-                for play in plays:
-                    seq_id = play.get('sequence')
-                    if seq_id is None:
-                        continue
-                    if seq_id not in sequences_dict:
-                        sequences_dict[seq_id] = {
-                            'sequenceId': seq_id,
-                            'events': [],
-                            'time': play.get('time', ''),
-                            'setpieceType': play.get('setpieceLabel', 'Open Play')
-                        }
-                    sequences_dict[seq_id]['events'].append(play)
-
-                matches_data.append({
-                    'matchId': match.match_id,
-                    'homeTeam': match.home_team.to_dict() if match.home_team else {},
-                    'awayTeam': match.away_team.to_dict() if match.away_team else {},
-                    'sequences': list(sequences_dict.values())
-                })
-
-            build_sequence_index(matches_data)
-        except Exception as e:
-            print(f"[DTW] Error initializing index: {e}")
-            _sequence_index = []
-            _cache_initialized = True
+    # Need to build the index
+    try:
+        matches_data = _build_matches_data_from_repository()
+        build_sequence_index(matches_data)
+    except Exception as e:
+        print(f"[DTW] Error initializing index: {e}")
+        _sequence_index = []
+        _cache_initialized = True
 
 
 # =============================================================================
@@ -564,6 +579,7 @@ def search_similar_sequences_dtw(query_sequence: Dict,
             'distance': distance,
             'similarity': similarity,
             'events': _lightweight_events(entry['events']),
+            'eventCount': len(entry['events']),
             'homeTeam': entry['homeTeam'],
             'awayTeam': entry['awayTeam'],
             'time': entry['time'],
@@ -578,19 +594,22 @@ def search_similar_sequences_dtw(query_sequence: Dict,
 
 
 def _lightweight_events(events: List[Dict]) -> List[Dict]:
-    """Return lightweight version of events WITH player coordinates for pitch rendering"""
+    """Return lightweight version of events WITH filtered key players for pitch rendering"""
     lightweight = []
     for event in events:
-        # [FIX] Simplified extraction from processed play data
-        # We assume the input 'events' here are the processed plays from fifa.py
+        ball_pos = _get_ball_position_dict(event)
 
-        ball_pos = event.get('ballPosition')
-        if not ball_pos:
-            ball = event.get('ball', [])
-            if ball:
-                ball_pos = {'x': ball[0].get('x', 0), 'y': ball[0].get('y', 0)}
+        # Get key player IDs for filtering
+        key_ids = event.get('keyPlayerIds', [])
+        
+        # Filter players to only key players (like TF-IDF does)
+        home_players = event.get('homePlayers', [])
+        away_players = event.get('awayPlayers', [])
+        
+        if key_ids:
+            home_players = [p for p in home_players if p.get('playerId') in key_ids]
+            away_players = [p for p in away_players if p.get('playerId') in key_ids]
 
-        # [FIX] Use keys directly from processed data where possible
         lw = {
             'eventType': event.get('eventType', ''),
             'eventLabel': event.get('eventLabel', ''),
@@ -601,10 +620,9 @@ def _lightweight_events(events: List[Dict]) -> List[Dict]:
             'time': event.get('time', ''),
             'ballPosition': ball_pos,
             'isGoal': event.get('isGoal', False),
-            # [FIX] Include full player arrays so pitch can render 0 events bug
-            'homePlayers': event.get('homePlayers', []),
-            'awayPlayers': event.get('awayPlayers', []),
-            # Include extended info for potential frontend use
+            'keyPlayerIds': key_ids,
+            'homePlayers': home_players,
+            'awayPlayers': away_players,
             'passType': event.get('passType', ''),
             'shotType': event.get('shotType', '')
         }

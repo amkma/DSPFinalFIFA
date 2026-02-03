@@ -3,14 +3,12 @@ FIFA World Cup 2022 Data Visualization
 OOP-based implementation with 4 principles: Encapsulation, Abstraction, Inheritance, Polymorphism
 """
 import json
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any
 from pathlib import Path
 from django.http import JsonResponse
 from django.shortcuts import render
-from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 
@@ -19,6 +17,30 @@ from django.views.decorators.csrf import csrf_exempt
 # =============================================================================
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BASE_DIR / 'FIFA_datan'
+
+# Event type mapping for display
+EVENT_LABELS = {
+    'PA': 'Pass',
+    'SH': 'Shot',
+    'CR': 'Cross',
+    'CL': 'Clearance',
+    'CH': 'Challenge',
+    'TC': 'Touch',
+    'BC': 'Ball Carry',
+    'IT': 'Initial Touch',
+    'RE': 'Rebound'
+}
+
+# Setpiece type mapping
+SETPIECE_LABELS = {
+    'O': 'Open Play',
+    'T': 'Throw-in',
+    'C': 'Corner',
+    'K': 'Kickoff',
+    'P': 'Penalty',
+    'G': 'Goal Kick',
+    'F': 'Free Kick'
+}
 
 
 # =============================================================================
@@ -284,6 +306,7 @@ class Match:
         self._metadata = None
         self._events = None
         self._roster = None
+        self._roster_map = None
         self.home_team: Optional[Team] = None
         self.away_team: Optional[Team] = None
         self._load_metadata()
@@ -346,6 +369,13 @@ class Match:
                 self._roster = json.load(f)
         else:
             self._roster = []
+
+        # Build a fast lookup map for player names
+        self._roster_map = {
+            p.get('player', {}).get('id'): p.get('player', {}).get('nickname', '')
+            for p in self._roster
+            if p.get('player', {}).get('id')
+        }
     
     def get_player_name(self, player_id: int) -> str:
         """Get player name from roster"""
@@ -353,10 +383,98 @@ class Match:
             return ''
         self._load_roster()
         str_id = str(player_id)
-        for p in self._roster:
-            if p.get('player', {}).get('id') == str_id:
-                return p.get('player', {}).get('nickname', '')
-        return ''
+        if self._roster_map is None:
+            return ''
+        return self._roster_map.get(str_id, '')
+
+    @staticmethod
+    def _extract_ball_position(event: Dict) -> Optional[Dict]:
+        """Extract ball position dict from event if present."""
+        ball_data = event.get('ball', [{}])
+        if ball_data and len(ball_data) > 0:
+            return {
+                'x': ball_data[0].get('x', 0),
+                'y': ball_data[0].get('y', 0),
+                'z': ball_data[0].get('z', 0)
+            }
+        return None
+
+    @staticmethod
+    def _find_goalkeeper(players: List[Dict], keeper_id: Optional[int], keeper_name: str) -> Optional[Dict]:
+        """Find goalkeeper data for a given team list."""
+        for p in players:
+            if p.get('positionGroupType') == 'GK' or p.get('playerId') == keeper_id:
+                return {
+                    'x': p.get('x', 0),
+                    'y': p.get('y', 0),
+                    'jerseyNum': p.get('jerseyNum', 0),
+                    'playerId': p.get('playerId'),
+                    'playerName': keeper_name or '',
+                    'positionGroupType': 'GK'
+                }
+        return None
+
+    @staticmethod
+    def _get_primary_player(event_type: str, poss_events: Dict, game_events: Dict) -> tuple[str, Optional[int]]:
+        """Get primary player name/id for a given event type."""
+        if event_type == 'PA':
+            return poss_events.get('passerPlayerName', ''), poss_events.get('passerPlayerId')
+        if event_type == 'SH':
+            return poss_events.get('shooterPlayerName', ''), poss_events.get('shooterPlayerId')
+        if event_type == 'CR':
+            return poss_events.get('crosserPlayerName', ''), poss_events.get('crosserPlayerId')
+        if event_type == 'CL':
+            return poss_events.get('clearerPlayerName', ''), poss_events.get('clearerPlayerId')
+        if event_type == 'CH':
+            # For challenges, show both players
+            home_player = poss_events.get('homeDuelPlayerName', '')
+            away_player = poss_events.get('awayDuelPlayerName', '')
+            player_name = f"{home_player} vs {away_player}" if home_player and away_player else home_player or away_player
+            player_id = poss_events.get('homeDuelPlayerId') or poss_events.get('awayDuelPlayerId')
+            return player_name, player_id
+        if event_type == 'TC':
+            return poss_events.get('touchPlayerName', ''), poss_events.get('touchPlayerId')
+        if event_type == 'BC':
+            return poss_events.get('ballCarrierPlayerName', ''), poss_events.get('ballCarrierPlayerId')
+        if event_type == 'RE':
+            return poss_events.get('rebounderPlayerName', ''), poss_events.get('rebounderPlayerId')
+        return game_events.get('playerName', ''), game_events.get('playerId')
+
+    @staticmethod
+    def _get_secondary_player(event_type: str, poss_events: Dict) -> tuple[str, Optional[int]]:
+        """Get secondary player name/id for a given event type."""
+        if event_type == 'PA':
+            name = poss_events.get('receiverPlayerName', '') or poss_events.get('targetPlayerName', '')
+            player_id = poss_events.get('receiverPlayerId') or poss_events.get('targetPlayerId')
+            return name, player_id
+        if event_type == 'CR':
+            return poss_events.get('targetPlayerName', ''), poss_events.get('targetPlayerId')
+        if event_type == 'SH':
+            # Goalkeeper and assister for shots
+            return '', poss_events.get('keeperPlayerId')
+        return '', None
+
+    @staticmethod
+    def _get_key_player_ids(event_type: str, player_id: Optional[int],
+                             secondary_player_id: Optional[int], poss_events: Dict) -> List[int]:
+        """Build list of key player IDs for an event."""
+        key_player_ids = []
+        if player_id:
+            key_player_ids.append(player_id)
+        if secondary_player_id:
+            key_player_ids.append(secondary_player_id)
+        if event_type == 'SH':
+            assister = poss_events.get('passerPlayerId')
+            if assister:
+                key_player_ids.append(assister)
+        if event_type == 'CH':
+            home_duel_id = poss_events.get('homeDuelPlayerId')
+            away_duel_id = poss_events.get('awayDuelPlayerId')
+            if home_duel_id:
+                key_player_ids.append(home_duel_id)
+            if away_duel_id:
+                key_player_ids.append(away_duel_id)
+        return key_player_ids
 
     def find_goals(self) -> List[Dict]:
         """Find all goals in the match with preceding pass sequence"""
@@ -412,13 +530,7 @@ class Match:
                                     receiver_name = prev_poss.get('receiverPlayerName', '') or prev_poss.get('targetPlayerName', '')
 
                                     # Get ball position for pass
-                                    ball = prev_event.get('ball', [{}])
-                                    ball_pos = None
-                                    if ball and len(ball) > 0:
-                                        ball_pos = {
-                                            'x': ball[0].get('x', 0),
-                                            'y': ball[0].get('y', 0)
-                                        }
+                                    ball_pos = self._extract_ball_position(prev_event)
 
                                     if passer_name:
                                         pass_sequence.append({
@@ -475,14 +587,7 @@ class Match:
                     involved_player_ids.add(scorer_id)
 
                 # Get ball position from the shot event
-                ball_data = event.get('ball', [{}])
-                ball_pos = None
-                if ball_data and len(ball_data) > 0:
-                    ball_pos = {
-                        'x': ball_data[0].get('x', 0),
-                        'y': ball_data[0].get('y', 0),
-                        'z': ball_data[0].get('z', 0)
-                    }
+                ball_pos = self._extract_ball_position(event)
 
                 # Build key player lists
                 key_home_players = []
@@ -508,55 +613,23 @@ class Match:
                                 key_away_players.append(player_data)
 
                     # Find goalkeeper (opposing team's GK)
-                    for p in event.get('homePlayers', []):
-                        if p.get('positionGroupType') == 'GK' or p.get('playerId') == keeper_id:
-                            key_home_players.append({
-                                'x': p.get('x', 0),
-                                'y': p.get('y', 0),
-                                'jerseyNum': p.get('jerseyNum', 0),
-                                'playerId': p.get('playerId'),
-                                'playerName': keeper_name or '',
-                                'positionGroupType': 'GK'
-                            })
-                            break
-                    for p in event.get('awayPlayers', []):
-                        if p.get('positionGroupType') == 'GK' or p.get('playerId') == keeper_id:
-                            key_away_players.append({
-                                'x': p.get('x', 0),
-                                'y': p.get('y', 0),
-                                'jerseyNum': p.get('jerseyNum', 0),
-                                'playerId': p.get('playerId'),
-                                'playerName': keeper_name or '',
-                                'positionGroupType': 'GK'
-                            })
-                            break
+                    home_gk = self._find_goalkeeper(event.get('homePlayers', []), keeper_id, keeper_name)
+                    away_gk = self._find_goalkeeper(event.get('awayPlayers', []), keeper_id, keeper_name)
+                    if home_gk:
+                        key_home_players.append(home_gk)
+                    if away_gk:
+                        key_away_players.append(away_gk)
                 else:
                     # For regular goals: use involved players from pass sequence
                     # Plus the scorer and opposing goalkeeper
 
                     # First, add goalkeeper from defending team
-                    for p in event.get('homePlayers', []):
-                        if p.get('positionGroupType') == 'GK' or p.get('playerId') == keeper_id:
-                            key_home_players.append({
-                                'x': p.get('x', 0),
-                                'y': p.get('y', 0),
-                                'jerseyNum': p.get('jerseyNum', 0),
-                                'playerId': p.get('playerId'),
-                                'playerName': keeper_name or '',
-                                'positionGroupType': 'GK'
-                            })
-                            break
-                    for p in event.get('awayPlayers', []):
-                        if p.get('positionGroupType') == 'GK' or p.get('playerId') == keeper_id:
-                            key_away_players.append({
-                                'x': p.get('x', 0),
-                                'y': p.get('y', 0),
-                                'jerseyNum': p.get('jerseyNum', 0),
-                                'playerId': p.get('playerId'),
-                                'playerName': keeper_name or '',
-                                'positionGroupType': 'GK'
-                            })
-                            break
+                    home_gk = self._find_goalkeeper(event.get('homePlayers', []), keeper_id, keeper_name)
+                    away_gk = self._find_goalkeeper(event.get('awayPlayers', []), keeper_id, keeper_name)
+                    if home_gk:
+                        key_home_players.append(home_gk)
+                    if away_gk:
+                        key_away_players.append(away_gk)
 
                     # Add involved players using their positions from the pass sequence
                     for pid, pdata in involved_player_positions.items():
@@ -630,30 +703,6 @@ class Match:
         """Get all plays/events in the match grouped by sequence"""
         self._load_events()
 
-        # Event type mapping for display
-        EVENT_LABELS = {
-            'PA': 'Pass',
-            'SH': 'Shot',
-            'CR': 'Cross',
-            'CL': 'Clearance',
-            'CH': 'Challenge',
-            'TC': 'Touch',
-            'BC': 'Ball Carry',
-            'IT': 'Initial Touch',
-            'RE': 'Rebound'
-        }
-
-        # Setpiece type mapping
-        SETPIECE_LABELS = {
-            'O': 'Open Play',
-            'T': 'Throw-in',
-            'C': 'Corner',
-            'K': 'Kickoff',
-            'P': 'Penalty',
-            'G': 'Goal Kick',
-            'F': 'Free Kick'
-        }
-
         plays = []
 
         for i, event in enumerate(self._events):
@@ -670,55 +719,15 @@ class Match:
                 continue
 
             # Get primary player for this event
-            player_name = ''
-            player_id = None
-            if event_type == 'PA':
-                player_name = poss_events.get('passerPlayerName', '')
-                player_id = poss_events.get('passerPlayerId')
-            elif event_type == 'SH':
-                player_name = poss_events.get('shooterPlayerName', '')
-                player_id = poss_events.get('shooterPlayerId')
-            elif event_type == 'CR':
-                player_name = poss_events.get('crosserPlayerName', '')
-                player_id = poss_events.get('crosserPlayerId')
-            elif event_type == 'CL':
-                player_name = poss_events.get('clearerPlayerName', '')
-                player_id = poss_events.get('clearerPlayerId')
-            elif event_type == 'CH':
-                # For challenges, show both players
-                home_player = poss_events.get('homeDuelPlayerName', '')
-                away_player = poss_events.get('awayDuelPlayerName', '')
-                player_name = f"{home_player} vs {away_player}" if home_player and away_player else home_player or away_player
-                player_id = poss_events.get('homeDuelPlayerId') or poss_events.get('awayDuelPlayerId')
-            elif event_type == 'TC':
-                player_name = poss_events.get('touchPlayerName', '')
-                player_id = poss_events.get('touchPlayerId')
-            elif event_type == 'BC':
-                player_name = poss_events.get('ballCarrierPlayerName', '')
-                player_id = poss_events.get('ballCarrierPlayerId')
-            elif event_type == 'RE':
-                player_name = poss_events.get('rebounderPlayerName', '')
-                player_id = poss_events.get('rebounderPlayerId')
-            else:
-                player_name = game_events.get('playerName', '')
-                player_id = game_events.get('playerId')
+            player_name, player_id = self._get_primary_player(event_type, poss_events, game_events)
 
             # [FIX] Lookup player name in roster if missing
             if not player_name and player_id:
                 player_name = self.get_player_name(player_id) or 'Unknown'
 
             # Get secondary player (receiver, target, etc.)
-            secondary_player = ''
-            secondary_player_id = None
-            if event_type == 'PA':
-                secondary_player = poss_events.get('receiverPlayerName', '') or poss_events.get('targetPlayerName', '')
-                secondary_player_id = poss_events.get('receiverPlayerId') or poss_events.get('targetPlayerId')
-            elif event_type == 'CR':
-                secondary_player = poss_events.get('targetPlayerName', '')
-                secondary_player_id = poss_events.get('targetPlayerId')
-            elif event_type == 'SH':
-                # Goalkeeper and assister for shots
-                secondary_player_id = poss_events.get('keeperPlayerId')
+            secondary_player, secondary_player_id = self._get_secondary_player(event_type, poss_events)
+            if event_type == 'SH':
                 # Assister is the passer for the shot
                 assister_id = poss_events.get('passerPlayerId')
 
@@ -727,24 +736,7 @@ class Match:
                 secondary_player = self.get_player_name(secondary_player_id)
 
             # Build list of key player IDs for this event
-            key_player_ids = []
-            if player_id:
-                key_player_ids.append(player_id)
-            if secondary_player_id:
-                key_player_ids.append(secondary_player_id)
-            # For shots/goals, add assister
-            if event_type == 'SH':
-                assister = poss_events.get('passerPlayerId')
-                if assister:
-                    key_player_ids.append(assister)
-            # For challenges, add both duel players
-            if event_type == 'CH':
-                home_duel_id = poss_events.get('homeDuelPlayerId')
-                away_duel_id = poss_events.get('awayDuelPlayerId')
-                if home_duel_id:
-                    key_player_ids.append(home_duel_id)
-                if away_duel_id:
-                    key_player_ids.append(away_duel_id)
+            key_player_ids = self._get_key_player_ids(event_type, player_id, secondary_player_id, poss_events)
 
             # Get outcome
             outcome = ''
@@ -762,14 +754,7 @@ class Match:
                 outcome = poss_events.get('challengeOutcomeType', '')
 
             # Get ball position
-            ball_data = event.get('ball', [{}])
-            ball_pos = None
-            if ball_data and len(ball_data) > 0:
-                ball_pos = {
-                    'x': ball_data[0].get('x', 0),
-                    'y': ball_data[0].get('y', 0),
-                    'z': ball_data[0].get('z', 0)
-                }
+            ball_pos = self._extract_ball_position(event)
 
             # Get player positions
             home_players = event.get('homePlayers', [])
@@ -873,8 +858,7 @@ def index(request):
         matches_data.append(match_dict)
 
     # Convert to JSON string for template
-    import json as json_lib
-    matches_json = json_lib.dumps(matches_data)
+    matches_json = json.dumps(matches_data)
 
     return render(request, 'index.html', {'matches': matches_json})
 
@@ -989,18 +973,24 @@ def api_match_plays(request, match_id: str):
 # =============================================================================
 # SEARCH API ENDPOINTS
 # =============================================================================
+def _parse_json_body(request) -> Optional[Dict[str, Any]]:
+    """Parse JSON body or return None if invalid."""
+    try:
+        return json.loads(request.body)
+    except json.JSONDecodeError:
+        return None
+
+
 @csrf_exempt
 def api_search_event(request):
     """API: Search for similar events using TF-IDF"""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
 
-    import json
     from .TF_IDF import search_similar_events
 
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
+    data = _parse_json_body(request)
+    if data is None:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     query_event = data.get('event')
@@ -1037,11 +1027,8 @@ def api_search_sequence(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
 
-    import json
-
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
+    data = _parse_json_body(request)
+    if data is None:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     query_events = data.get('events')

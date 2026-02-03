@@ -239,6 +239,18 @@ class PitchRenderer {
         this._pitchColor = '#1a472a';
         this._lineColor = '#ffffff';
     }
+
+    _createPlayerMarker(player, team, isHome) {
+        return new PlayerMarker(
+            new Position(player.x, player.y),
+            team?.primaryColor || (isHome ? '#3b82f6' : '#ef4444'),
+            team?.textColor || '#ffffff',
+            player.jerseyNum || 0,
+            player.playerName || '',
+            player.positionGroupType || '',
+            isHome
+        );
+    }
     
     // Set event marker to draw at ball position
     setEventMarker(type, position) {
@@ -264,36 +276,20 @@ class PitchRenderer {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
-        if (type === 'Challenge') {
-            // Crossed swords for challenge
-            ctx.fillStyle = '#ff4444';
-            ctx.shadowColor = '#ff0000';
-            ctx.shadowBlur = 10;
-            ctx.fillText('⚔️', pos.x, pos.y - 25);
-        } else if (type === 'Shot') {
-            // Explosion for shot
-            ctx.fillStyle = '#ffcc00';
-            ctx.shadowColor = '#ffaa00';
-            ctx.shadowBlur = 10;
-            ctx.fillText('💥', pos.x, pos.y - 25);
-        } else if (type === 'Cross') {
-            // Curved arrow for cross
-            ctx.fillStyle = '#00ccff';
-            ctx.shadowColor = '#00aaff';
-            ctx.shadowBlur = 8;
-            ctx.fillText('↗️', pos.x, pos.y - 25);
-        } else if (type === 'Clearance') {
-            // Shield for clearance
-            ctx.fillStyle = '#44ff44';
-            ctx.shadowColor = '#22cc22';
-            ctx.shadowBlur = 8;
-            ctx.fillText('🛡️', pos.x, pos.y - 25);
-        } else if (type === 'Pass') {
-            // Target for pass
-            ctx.fillStyle = '#ffffff';
-            ctx.shadowColor = '#aaaaaa';
-            ctx.shadowBlur = 6;
-            ctx.fillText('🎯', pos.x, pos.y - 25);
+        const markers = {
+            'Challenge': { icon: '⚔️', fill: '#ff4444', shadow: '#ff0000', blur: 10 },
+            'Shot': { icon: '💥', fill: '#ffcc00', shadow: '#ffaa00', blur: 10 },
+            'Cross': { icon: '↗️', fill: '#00ccff', shadow: '#00aaff', blur: 8 },
+            'Clearance': { icon: '🛡️', fill: '#44ff44', shadow: '#22cc22', blur: 8 },
+            'Pass': { icon: '🎯', fill: '#ffffff', shadow: '#aaaaaa', blur: 6 }
+        };
+
+        const marker = markers[type];
+        if (marker) {
+            ctx.fillStyle = marker.fill;
+            ctx.shadowColor = marker.shadow;
+            ctx.shadowBlur = marker.blur;
+            ctx.fillText(marker.icon, pos.x, pos.y - 25);
         }
         
         ctx.restore();
@@ -401,32 +397,14 @@ class PitchRenderer {
         // Process home players
         homePlayers.forEach(p => {
             if (p.x !== undefined && p.y !== undefined) {
-                const marker = new PlayerMarker(
-                    new Position(p.x, p.y),
-                    homeTeam?.primaryColor || '#3b82f6',
-                    homeTeam?.textColor || '#ffffff',
-                    p.jerseyNum || 0,
-                    p.playerName || '',
-                    p.positionGroupType || '',
-                    true
-                );
-                this._players.push(marker);
+                this._players.push(this._createPlayerMarker(p, homeTeam, true));
             }
         });
 
         // Process away players
         awayPlayers.forEach(p => {
             if (p.x !== undefined && p.y !== undefined) {
-                const marker = new PlayerMarker(
-                    new Position(p.x, p.y),
-                    awayTeam?.primaryColor || '#ef4444',
-                    awayTeam?.textColor || '#ffffff',
-                    p.jerseyNum || 0,
-                    p.playerName || '',
-                    p.positionGroupType || '',
-                    false
-                );
-                this._players.push(marker);
+                this._players.push(this._createPlayerMarker(p, awayTeam, false));
             }
         });
     }

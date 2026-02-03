@@ -116,16 +116,7 @@ class Event(ABC):
         self.video_url = game_events.get('videoUrl')
         
         # Extract ball position
-        ball_data = event_data.get('ball', [{}])
-        if ball_data and len(ball_data) > 0:
-            b = ball_data[0]
-            self.ball_position = Position(
-                x=b.get('x', 0),
-                y=b.get('y', 0),
-                z=b.get('z', 0)
-            )
-        else:
-            self.ball_position = None
+        self.ball_position = self._extract_ball_position(event_data)
         
         # Extract player positions
         self.home_players = self._extract_players(event_data.get('homePlayers', []))
@@ -158,6 +149,19 @@ class Event(ABC):
             )
             players.append(player)
         return players
+
+    @staticmethod
+    def _extract_ball_position(event_data: Dict[str, Any]) -> Optional[Position]:
+        """Extract ball position from raw event data if present."""
+        ball_data = event_data.get('ball', [{}])
+        if ball_data and len(ball_data) > 0:
+            b = ball_data[0]
+            return Position(
+                x=b.get('x', 0),
+                y=b.get('y', 0),
+                z=b.get('z', 0)
+            )
+        return None
     
     @abstractmethod
     def get_event_label(self) -> str:

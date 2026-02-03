@@ -2,7 +2,6 @@
 Views for FIFA World Cup Data Visualization
 """
 import json
-import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -11,8 +10,8 @@ from django.http import JsonResponse
 from django.shortcuts import render
 
 from .models import (
-    Match, Team, Stadium, Player, Position,
-    Event, PassEvent, GoalEvent, GoalSequence, EventFactory
+    Match, Team, Stadium,
+    GoalEvent, GoalSequence, EventFactory
 )
 
 
@@ -93,6 +92,18 @@ class MatchService:
     
     def __init__(self):
         self.loader = DataLoader()
+
+    @staticmethod
+    def _build_team(team_data: Dict, kit_data: Dict) -> Team:
+        """Build a Team instance from metadata and kit data."""
+        return Team(
+            id=int(team_data.get('id', 0)),
+            name=team_data.get('name', ''),
+            short_name=team_data.get('shortName', ''),
+            primary_color=kit_data.get('primaryColor', '#ffffff'),
+            primary_text_color=kit_data.get('primaryTextColor', '#000000'),
+            secondary_color=kit_data.get('secondaryColor', '#000000')
+        )
     
     def get_all_matches(self) -> List[Match]:
         """Get all matches with basic info"""
@@ -117,25 +128,11 @@ class MatchService:
         # Build teams
         home_team_data = metadata.get('homeTeam', {})
         home_kit = metadata.get('homeTeamKit', {})
-        home_team = Team(
-            id=int(home_team_data.get('id', 0)),
-            name=home_team_data.get('name', ''),
-            short_name=home_team_data.get('shortName', ''),
-            primary_color=home_kit.get('primaryColor', '#ffffff'),
-            primary_text_color=home_kit.get('primaryTextColor', '#000000'),
-            secondary_color=home_kit.get('secondaryColor', '#000000')
-        )
+        home_team = self._build_team(home_team_data, home_kit)
         
         away_team_data = metadata.get('awayTeam', {})
         away_kit = metadata.get('awayTeamKit', {})
-        away_team = Team(
-            id=int(away_team_data.get('id', 0)),
-            name=away_team_data.get('name', ''),
-            short_name=away_team_data.get('shortName', ''),
-            primary_color=away_kit.get('primaryColor', '#ffffff'),
-            primary_text_color=away_kit.get('primaryTextColor', '#000000'),
-            secondary_color=away_kit.get('secondaryColor', '#000000')
-        )
+        away_team = self._build_team(away_team_data, away_kit)
         
         # Stadium
         stadium_data = metadata.get('stadium', {})

@@ -81,10 +81,36 @@
                 </div>
                 <div class="modal-body pitch-modal-body">
                     <div class="pitch-wrapper">
-                        <div class="pitch-container">
-                            <canvas id="pitchCanvas"></canvas>
-                            <div class="player-tooltip" id="playerTooltip"></div>
+                        <!-- Dual pitch container (side by side when comparison active) -->
+                        <div class="dual-pitch-container" id="dualPitchContainer">
+                            <!-- Query pitch (left side) -->
+                            <div class="query-pitch-section" id="queryPitchSection">
+                                <div class="pitch-container">
+                                    <canvas id="pitchCanvas"></canvas>
+                                    <div class="player-tooltip" id="playerTooltip"></div>
+                                </div>
+                                <div class="query-events-list" id="queryEventsList">
+                                    <!-- Query sequence events rendered by JS -->
+                                </div>
+                            </div>
+                            
+                            <!-- Comparison pitch (right side, hidden by default) -->
+                            <div class="comparison-pitch-section" id="comparisonPitchSection" style="display: none;">
+                                <div class="comparison-header-compact">
+                                    <span class="comparison-label">Similar Play</span>
+                                    <span class="similarity-badge" id="similarityScore">0.00</span>
+                                    <span class="comparison-match-info" id="comparisonMatchInfo"></span>
+                                </div>
+                                <div class="pitch-container comparison-pitch">
+                                    <canvas id="comparisonCanvas"></canvas>
+                                    <div class="player-tooltip" id="comparisonTooltip"></div>
+                                </div>
+                                <div class="comparison-events-list" id="comparisonEventsList">
+                                    <!-- Comparison sequence events rendered by JS -->
+                                </div>
+                            </div>
                         </div>
+                        
                         <div class="search-buttons" id="searchButtons">
                             <select class="search-method-select" id="searchMethodSelect">
                                 <option value="dtw" selected>DTW</option>
@@ -104,21 +130,6 @@
                             <div class="legend-item">
                                 <span class="legend-dot ball"></span>
                                 <span>Ball</span>
-                            </div>
-                        </div>
-                        <!-- Comparison pitch (hidden by default) -->
-                        <div class="comparison-section" id="comparisonSection" style="display: none;">
-                            <div class="comparison-header">
-                                <h4>Similar Play</h4>
-                                <span class="similarity-badge" id="similarityScore">0.00</span>
-                            </div>
-                            <div class="comparison-match-info" id="comparisonMatchInfo"></div>
-                            <div class="pitch-container comparison-pitch">
-                                <canvas id="comparisonCanvas"></canvas>
-                                <div class="player-tooltip" id="comparisonTooltip"></div>
-                            </div>
-                            <div class="comparison-events" id="comparisonEvents">
-                                <!-- Events list rendered by JS -->
                             </div>
                         </div>
                     </div>

@@ -56,7 +56,9 @@ class EventVisualizer {
         // Set canvas size
         const container = this._canvas.parentElement;
         this._canvas.width = container.offsetWidth || 800;
-        this._canvas.height = Math.min(container.offsetWidth * 0.6, 500);
+        // Maintain pitch aspect ratio (105x68 ≈ 0.647)
+        // Allow height to grow, don't hard limit to 500px if width is large
+        this._canvas.height = Math.max(container.offsetWidth * 0.65, 525);
     }
 
     _bindEvents() {
@@ -190,12 +192,17 @@ class App {
         this.searchResults = document.getElementById('searchResults');
         this.searchBackBtn = document.getElementById('searchBackBtn');
         this.panelTitle = document.getElementById('panelTitle');
-        this.comparisonSection = document.getElementById('comparisonSection');
         this.similarityScore = document.getElementById('similarityScore');
         this.comparisonMatchInfo = document.getElementById('comparisonMatchInfo');
-        this.comparisonEvents = document.getElementById('comparisonEvents');
         this.searchButtons = document.getElementById('searchButtons');
         this.pitchLegend = document.getElementById('pitchLegend');
+        
+        // Dual pitch elements
+        this.dualPitchContainer = document.getElementById('dualPitchContainer');
+        this.queryPitchSection = document.getElementById('queryPitchSection');
+        this.comparisonPitchSection = document.getElementById('comparisonPitchSection');
+        this.queryEventsList = document.getElementById('queryEventsList');
+        this.comparisonEventsList = document.getElementById('comparisonEventsList');
         
         // Search state
         this._searchMode = false;
@@ -379,8 +386,6 @@ class App {
     _renderPlays() {
         if (!this.goalsGrid) return;
         
-        console.log('Rendering plays:', this._plays.length, 'sequences');
-        
         if (this._plays.length === 0) {
             this.goalsGrid.innerHTML = `
                 <div class="empty-state">
@@ -406,13 +411,12 @@ class App {
         list.className = 'plays-list';
         list.id = 'playsList';
         
+        const fragment = document.createDocumentFragment();
         this._plays.forEach((sequence, seqIndex) => {
-            if (seqIndex < 3) {
-                console.log('Sequence', seqIndex, ':', sequence.setpieceType, sequence.time, 'events:', sequence.events?.length);
-            }
             const seqElement = this._createSequenceElement(sequence, seqIndex);
-            list.appendChild(seqElement);
+            fragment.appendChild(seqElement);
         });
+        list.appendChild(fragment);
         
         this.goalsGrid.innerHTML = '';
         this.goalsGrid.appendChild(filterBar);
@@ -457,54 +461,31 @@ class App {
             ${hasGoal ? '<span class="goal-indicator">⚽ GOAL</span>' : ''}
             <span class="seq-count">${sequence.events.length} events</span>
             <button class="view-seq-btn">View →</button>
-            <button class="expand-btn">${hasGoal ? '▲' : '▼'}</button>
         `;
         
-        // Events list - LAZY: only populate when expanded
-        const eventsList = document.createElement('div');
-        eventsList.className = 'events-list' + (hasGoal ? ' expanded' : '');
-        eventsList.dataset.loaded = 'false';
-        
-        // Store sequence data for lazy loading
+        // Store sequence data
         container._sequence = sequence;
         
-        // Only populate events if has goal (auto-expanded)
-        if (hasGoal) {
-            this._populateEventsList(eventsList, sequence);
-        }
-        
         container.appendChild(header);
-        container.appendChild(eventsList);
         
-        // View sequence button - opens pitch modal with first event
-        header.querySelector('.view-seq-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
+        // View sequence - opens pitch modal with first event
+        header.addEventListener('click', () => {
             if (sequence.events && sequence.events.length > 0) {
                 this._openPitchModal(sequence.events[0], sequence);
             }
         });
         
-        // Toggle expansion with lazy loading
-        header.querySelector('.expand-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            const isExpanded = eventsList.classList.toggle('expanded');
-            e.target.textContent = isExpanded ? '▲' : '▼';
-            
-            // Lazy load events on first expansion
-            if (isExpanded && eventsList.dataset.loaded === 'false') {
-                this._populateEventsList(eventsList, sequence);
-            }
-        });
+        // Make View button also trigger interactions but without bubbling issues
+        const viewBtn = header.querySelector('.view-seq-btn');
+        if (viewBtn) {
+            viewBtn.style.pointerEvents = 'none'; // let click pass through to header
+        }
         
         return container;
     }
-    
+
     _populateEventsList(eventsList, sequence) {
-        eventsList.dataset.loaded = 'true';
-        sequence.events.forEach((event, eventIndex) => {
-            const eventItem = this._createEventItem(event, eventIndex, sequence);
-            eventsList.appendChild(eventItem);
-        });
+        // Legacy support function - no longer used but kept to avoid errors if referenced
     }
 
     _createEventItem(event, eventIndex, sequence) {
@@ -579,8 +560,12 @@ class App {
             this._exitSearchMode();
         }
         // Also hide comparison section even if not in search mode
-        if (this.comparisonSection) {
-            this.comparisonSection.style.display = 'none';
+        if (this.comparisonPitchSection) {
+            this.comparisonPitchSection.style.display = 'none';
+        }
+        // Remove comparison-active class
+        if (this.dualPitchContainer) {
+            this.dualPitchContainer.classList.remove('comparison-active');
         }
         this._comparisonVisualizer = null;
         
@@ -607,8 +592,11 @@ class App {
             this.goalMinute.textContent = event.time || sequence.time || '';
         }
         
-        // Render event sequence
+        // Render event sequence in right panel (keep for navigation)
         this._renderEventSequence(event, sequence);
+        
+        // Render query events list below query pitch (hidden until comparison active)
+        this._renderQueryEventsList(sequence.events || [], event);
         
         // Show modal
         if (this.pitchModal) {
@@ -620,40 +608,16 @@ class App {
             if (!this._visualizer) {
                 this._visualizer = new EventVisualizer('pitchCanvas', 'playerTooltip');
             }
-            
-            // Filter to key players only
-            const keyIds = event.keyPlayerIds || [];
-            const filteredHome = (event.homePlayers || []).filter(p => keyIds.includes(p.playerId));
-            const filteredAway = (event.awayPlayers || []).filter(p => keyIds.includes(p.playerId));
-            
-            // Build snapshot with filtered players
-            const snapshot = {
-                homePlayers: filteredHome,
-                awayPlayers: filteredAway,
-                ball: event.ballPosition
-            };
-            
-            // Build preceding events for pass line
-            const eventIndex = sequence.events.indexOf(event);
-            const precedingEvents = sequence.events.slice(Math.max(0, eventIndex - 5), eventIndex + 1).map(e => ({
-                eventType: e.eventLabel || e.eventType,
-                playerName: e.playerName,
-                ballPosition: e.ballPosition,
-                teamId: e.teamId
-            }));
-            
-            // Build event data for visualizer
-            const eventData = {
-                event: {
-                    ...event,
-                    ballPosition: event.ballPosition
-                },
-                snapshot: snapshot,
-                precedingEvents: precedingEvents,
-                homeTeam: this._currentMatch?.homeTeam,
-                awayTeam: this._currentMatch?.awayTeam
-            };
-            
+
+            const eventData = this._buildEventData(
+                event,
+                sequence.events || [],
+                this._currentMatch?.homeTeam,
+                this._currentMatch?.awayTeam,
+                null,
+                false
+            );
+
             this._visualizer.visualize(eventData);
         }, 100);
     }
@@ -716,38 +680,63 @@ class App {
         // Store current event for search
         this._currentEvent = event;
         
-        // Filter to key players for this event
+        const eventData = this._buildEventData(
+            event,
+            this._currentSequence.events || [],
+            this._currentMatch?.homeTeam,
+            this._currentMatch?.awayTeam,
+            event.eventLabel,
+            false
+        );
+
+        this._visualizer.visualize(eventData);
+    }
+
+    _filterPlayersByKeyIds(event, allowEmptyKeyIds) {
         const keyIds = event.keyPlayerIds || [];
-        const filteredHome = (event.homePlayers || []).filter(p => keyIds.includes(p.playerId));
-        const filteredAway = (event.awayPlayers || []).filter(p => keyIds.includes(p.playerId));
-        
-        // Build snapshot
-        const snapshot = {
-            homePlayers: filteredHome,
-            awayPlayers: filteredAway,
-            ball: event.ballPosition
+        const useAllPlayers = allowEmptyKeyIds && keyIds.length === 0;
+
+        if (useAllPlayers) {
+            return {
+                homePlayers: event.homePlayers || [],
+                awayPlayers: event.awayPlayers || []
+            };
+        }
+
+        return {
+            homePlayers: (event.homePlayers || []).filter(p => keyIds.includes(p.playerId)),
+            awayPlayers: (event.awayPlayers || []).filter(p => keyIds.includes(p.playerId))
         };
-        
-        // Build preceding events for pass lines
-        const eventIndex = this._currentSequence.events.indexOf(event);
-        const precedingEvents = this._currentSequence.events.slice(Math.max(0, eventIndex - 5), eventIndex + 1).map(e => ({
+    }
+
+    _buildPrecedingEvents(events, event) {
+        const eventIndex = events.indexOf(event);
+        return events.slice(Math.max(0, eventIndex - 5), eventIndex + 1).map(e => ({
             eventType: e.eventLabel || e.eventType,
             playerName: e.playerName,
             ballPosition: e.ballPosition,
             teamId: String(e.teamId)
         }));
-        
-        // Build event data
-        const eventData = {
+    }
+
+    _buildEventData(event, events, homeTeam, awayTeam, marker, allowEmptyKeyIds) {
+        const filteredPlayers = this._filterPlayersByKeyIds(event, allowEmptyKeyIds);
+        const snapshot = {
+            homePlayers: filteredPlayers.homePlayers,
+            awayPlayers: filteredPlayers.awayPlayers,
+            ball: event.ballPosition
+        };
+
+        const precedingEvents = this._buildPrecedingEvents(events, event);
+
+        return {
             event: { ...event, ballPosition: event.ballPosition },
             snapshot: snapshot,
             precedingEvents: precedingEvents,
-            homeTeam: this._currentMatch?.homeTeam,
-            awayTeam: this._currentMatch?.awayTeam,
-            eventMarker: event.eventLabel  // For drawing event-specific marker
+            homeTeam: homeTeam,
+            awayTeam: awayTeam,
+            eventMarker: marker || undefined
         };
-        
-        this._visualizer.visualize(eventData);
     }
 
     // =========================================================================
@@ -756,8 +745,8 @@ class App {
     
     _showSearchLoading() {
         // Reset any previous comparison
-        if (this.comparisonSection) {
-            this.comparisonSection.style.display = 'none';
+        if (this.comparisonPitchSection) {
+            this.comparisonPitchSection.style.display = 'none';
         }
         this._comparisonVisualizer = null;
         
@@ -840,15 +829,27 @@ class App {
         this._searchType = null;
         this._searchResults = null;
         
-        // Hide and reset comparison section
-        if (this.comparisonSection) {
-            this.comparisonSection.style.display = 'none';
+        // Hide comparison pitch section
+        if (this.comparisonPitchSection) {
+            this.comparisonPitchSection.style.display = 'none';
+        }
+        
+        // Remove comparison-active class
+        if (this.dualPitchContainer) {
+            this.dualPitchContainer.classList.remove('comparison-active');
         }
         
         // Restore search buttons and legend
         if (this.searchButtons) this.searchButtons.style.display = 'flex';
         if (this.pitchLegend) this.pitchLegend.style.display = 'flex';
         
+        // Resize visualizer back to full width
+        setTimeout(() => {
+            if (this._visualizer) {
+                this._visualizer.resize();
+            }
+        }, 50);
+
         // Destroy comparison visualizer to force fresh canvas
         this._comparisonVisualizer = null;
         
@@ -881,6 +882,7 @@ class App {
             return;
         }
         
+        const fragment = document.createDocumentFragment();
         results.forEach((result, index) => {
             const item = document.createElement('div');
             item.className = 'search-result-item';
@@ -921,35 +923,44 @@ class App {
                 this._showComparison(result);
             });
             
-            this.searchResults.appendChild(item);
+            fragment.appendChild(item);
         });
+        this.searchResults.appendChild(fragment);
     }
     
     _showComparison(result) {
-        if (!this.comparisonSection) return;
+        if (!this.comparisonPitchSection) return;
         
         // Store for later use when clicking events
         this._currentComparisonResult = result;
         
-        // Show comparison section
-        this.comparisonSection.style.display = 'block';
+        // Show comparison pitch section (side by side)
+        this.comparisonPitchSection.style.display = 'block';
         this.similarityScore.textContent = result.similarity.toFixed(2);
         
+        // Add comparison-active class to enable side-by-side layout
+        if (this.dualPitchContainer) {
+            this.dualPitchContainer.classList.add('comparison-active');
+        }
+        
+        // Resize original visualizer to fit new half-width layout
+        // Use timeout to allow DOM reflow to complete
+        setTimeout(() => {
+            if (this._visualizer) {
+                this._visualizer.resize();
+            }
+        }, 50);
+
         // Hide search buttons and legend when showing comparison
         if (this.searchButtons) this.searchButtons.style.display = 'none';
         if (this.pitchLegend) this.pitchLegend.style.display = 'none';
         
-        // Show match info
+        // Show match info in compact header
         if (this.comparisonMatchInfo) {
-            const homeName = result.homeTeam?.name || 'Home';
-            const awayName = result.awayTeam?.name || 'Away';
+            const homeName = result.homeTeam?.shortName || result.homeTeam?.name || 'Home';
+            const awayName = result.awayTeam?.shortName || result.awayTeam?.name || 'Away';
             this.comparisonMatchInfo.textContent = `${homeName} vs ${awayName}`;
         }
-        
-        // Scroll to comparison section
-        setTimeout(() => {
-            this.comparisonSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
         
         // Build event data for comparison
         let comparisonEvent, comparisonSequence;
@@ -958,46 +969,28 @@ class App {
             comparisonEvent = result.event;
             comparisonSequence = { events: [result.event] };
         } else {
-            // For sequence, use first event or last (most significant)
+            // For sequence, use first event
             const events = result.events || [];
-            comparisonEvent = events[events.length - 1] || events[0];
+            comparisonEvent = events[0] || events[events.length - 1];
             comparisonSequence = result;
         }
         
         if (!comparisonEvent) return;
         
-        // Render events list
-        this._renderComparisonEvents(comparisonSequence.events || [], comparisonEvent);
+        // Store current comparison event
+        this._currentComparisonEvent = comparisonEvent;
         
-        // Players are already filtered to key players by server
-        const snapshot = {
-            homePlayers: comparisonEvent.homePlayers || [],
-            awayPlayers: comparisonEvent.awayPlayers || [],
-            ball: comparisonEvent.ballPosition
-        };
+        // Render comparison events list
+        this._renderComparisonEventsList(comparisonSequence.events || [], comparisonEvent);
         
-        // Build preceding events
-        const events = comparisonSequence.events || [];
-        const eventIndex = events.indexOf(comparisonEvent);
-        const precedingEvents = events.slice(Math.max(0, eventIndex - 5), eventIndex + 1).map(e => ({
-            eventType: e.eventLabel || e.eventType,
-            playerName: e.playerName,
-            ballPosition: e.ballPosition,
-            teamId: String(e.teamId)
-        }));
-        
-        const eventData = {
-            event: { ...comparisonEvent, ballPosition: comparisonEvent.ballPosition },
-            snapshot: snapshot,
-            precedingEvents: precedingEvents,
-            homeTeam: result.homeTeam,
-            awayTeam: result.awayTeam,
-            eventMarker: comparisonEvent.eventLabel
-        };
-        
-        console.log('Comparison eventData:', eventData);
-        console.log('Comparison event:', comparisonEvent);
-        console.log('Result:', result);
+        const eventData = this._buildEventData(
+            comparisonEvent,
+            comparisonSequence.events || [],
+            result.homeTeam,
+            result.awayTeam,
+            comparisonEvent.eventLabel,
+            true
+        );
         
         // Initialize comparison visualizer after DOM is ready
         setTimeout(() => {
@@ -1008,13 +1001,65 @@ class App {
         }, 150);
     }
     
-    _renderComparisonEvents(events, activeEvent) {
-        if (!this.comparisonEvents) return;
+    _renderQueryEventsList(events, activeEvent) {
+        if (!this.queryEventsList) return;
         
-        this.comparisonEvents.innerHTML = '';
+        this.queryEventsList.innerHTML = '';
+        
+        if (!events || events.length === 0) return;
+        
+        events.forEach((event, index) => {
+            const isActive = event === activeEvent;
+            const item = document.createElement('div');
+            item.className = `query-event-item${isActive ? ' active' : ''}`;
+            
+            const icon = event.isGoal ? '⚽' : (EVENT_ICONS[event.eventLabel] || EVENT_ICONS['Unknown']);
+            const time = event.time || '';
+            const player = event.playerName || 'Unknown';
+            
+            item.innerHTML = `
+                <span class="query-event-icon">${icon}</span>
+                <span class="query-event-player">${player}</span>
+                <span class="query-event-time">${time}</span>
+            `;
+            
+            // Click to update query pitch
+            item.addEventListener('click', () => {
+                this.queryEventsList.querySelectorAll('.query-event-item').forEach(el => el.classList.remove('active'));
+                item.classList.add('active');
+                
+                this._updateQueryPitch(event);
+            });
+            
+            this.queryEventsList.appendChild(item);
+        });
+    }
+    
+    _updateQueryPitch(event) {
+        if (!this._visualizer || !this._currentSequence) return;
+        
+        // Store current event
+        this._currentEvent = event;
+        
+        const eventData = this._buildEventData(
+            event,
+            this._currentSequence.events || [],
+            this._currentMatch?.homeTeam,
+            this._currentMatch?.awayTeam,
+            event.eventLabel,
+            false
+        );
+
+        this._visualizer.visualize(eventData);
+    }
+    
+    _renderComparisonEventsList(events, activeEvent) {
+        if (!this.comparisonEventsList) return;
+        
+        this.comparisonEventsList.innerHTML = '';
         
         if (!events || events.length === 0) {
-            this.comparisonEvents.innerHTML = '<div class="no-events">No events</div>';
+            this.comparisonEventsList.innerHTML = '<div class="no-events">No events</div>';
             return;
         }
         
@@ -1022,7 +1067,6 @@ class App {
             const isActive = event === activeEvent;
             const item = document.createElement('div');
             item.className = `comparison-event-item${isActive ? ' active' : ''}`;
-            item.style.cursor = 'pointer';
             
             const icon = event.isGoal ? '⚽' : (EVENT_ICONS[event.eventLabel] || EVENT_ICONS['Unknown']);
             const time = event.time || '';
@@ -1036,46 +1080,28 @@ class App {
             
             // Click to update comparison pitch
             item.addEventListener('click', () => {
-                // Update active state
-                this.comparisonEvents.querySelectorAll('.comparison-event-item').forEach(el => el.classList.remove('active'));
+                this.comparisonEventsList.querySelectorAll('.comparison-event-item').forEach(el => el.classList.remove('active'));
                 item.classList.add('active');
                 
-                // Update the comparison pitch with this event
                 this._updateComparisonPitch(event, events);
             });
             
-            this.comparisonEvents.appendChild(item);
+            this.comparisonEventsList.appendChild(item);
         });
     }
     
     _updateComparisonPitch(event, allEvents) {
         if (!this._comparisonVisualizer) return;
         
-        // Build snapshot from event (already filtered to key players by server)
-        const snapshot = {
-            homePlayers: event.homePlayers || [],
-            awayPlayers: event.awayPlayers || [],
-            ball: event.ballPosition
-        };
-        
-        // Build preceding events
-        const eventIndex = allEvents.indexOf(event);
-        const precedingEvents = allEvents.slice(Math.max(0, eventIndex - 5), eventIndex + 1).map(e => ({
-            eventType: e.eventLabel || e.eventType,
-            playerName: e.playerName,
-            ballPosition: e.ballPosition,
-            teamId: String(e.teamId)
-        }));
-        
-        const eventData = {
-            event: { ...event, ballPosition: event.ballPosition },
-            snapshot: snapshot,
-            precedingEvents: precedingEvents,
-            homeTeam: this._currentComparisonResult?.homeTeam,
-            awayTeam: this._currentComparisonResult?.awayTeam,
-            eventMarker: event.eventLabel
-        };
-        
+        const eventData = this._buildEventData(
+            event,
+            allEvents || [],
+            this._currentComparisonResult?.homeTeam,
+            this._currentComparisonResult?.awayTeam,
+            event.eventLabel,
+            true
+        );
+
         this._comparisonVisualizer.visualize(eventData);
     }
 }
