@@ -593,22 +593,39 @@ def search_similar_sequences_dtw(query_sequence: Dict,
     return results[:top_n]
 
 
+def _ensure_key_player_ids(event: Dict) -> List[int]:
+    """Ensure keyPlayerIds contains at least the primary player."""
+    key_ids = list(event.get('keyPlayerIds', []))  # Copy to avoid mutation
+    
+    # Always include primary player if present
+    player_id = event.get('playerId')
+    if player_id and player_id not in key_ids:
+        key_ids.append(player_id)
+    
+    # Include secondary player if present
+    secondary = event.get('secondaryPlayerId') or event.get('secondaryPlayer')
+    if isinstance(secondary, int) and secondary not in key_ids:
+        key_ids.append(secondary)
+    
+    return key_ids
+
+
 def _lightweight_events(events: List[Dict]) -> List[Dict]:
     """Return lightweight version of events WITH filtered key players for pitch rendering"""
     lightweight = []
     for event in events:
+        # Extract ball position with fallback
         ball_pos = _get_ball_position_dict(event)
 
-        # Get key player IDs for filtering
-        key_ids = event.get('keyPlayerIds', [])
+        # Ensure we always have key player IDs (at minimum the primary player)
+        key_ids = _ensure_key_player_ids(event)
         
-        # Filter players to only key players (like TF-IDF does)
+        # Filter players to only key players
         home_players = event.get('homePlayers', [])
         away_players = event.get('awayPlayers', [])
         
-        if key_ids:
-            home_players = [p for p in home_players if p.get('playerId') in key_ids]
-            away_players = [p for p in away_players if p.get('playerId') in key_ids]
+        home_players = [p for p in home_players if p.get('playerId') in key_ids]
+        away_players = [p for p in away_players if p.get('playerId') in key_ids]
 
         lw = {
             'eventType': event.get('eventType', ''),

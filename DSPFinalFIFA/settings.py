@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'DSPFinalFIFA.FIFA',  # FIFA app with eager cache initialization
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',

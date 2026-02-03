@@ -429,11 +429,49 @@ def initialize_cache():
 # =============================================================================
 # SEARCH FUNCTIONS
 # =============================================================================
+def _extract_ball_position(event: Dict) -> Optional[Dict]:
+    """Extract ball position from event, handling both dict and array formats."""
+    # Format 1: ballPosition dict (processed data)
+    ball_pos = event.get('ballPosition')
+    if ball_pos and isinstance(ball_pos, dict):
+        return {'x': ball_pos.get('x', 0), 'y': ball_pos.get('y', 0), 'z': ball_pos.get('z', 0)}
+    
+    # Format 2: ball array (raw data)
+    ball = event.get('ball', [])
+    if ball and len(ball) > 0:
+        return {'x': ball[0].get('x', 0), 'y': ball[0].get('y', 0), 'z': ball[0].get('z', 0)}
+    
+    return None
+
+
+def _ensure_key_player_ids(event: Dict) -> List[int]:
+    """Ensure keyPlayerIds contains at least the primary player."""
+    key_ids = list(event.get('keyPlayerIds', []))  # Copy to avoid mutation
+    
+    # Always include primary player if present
+    player_id = event.get('playerId')
+    if player_id and player_id not in key_ids:
+        key_ids.append(player_id)
+    
+    # Include secondary player if present
+    secondary = event.get('secondaryPlayerId') or event.get('secondaryPlayer')
+    if isinstance(secondary, int) and secondary not in key_ids:
+        key_ids.append(secondary)
+    
+    return key_ids
+
+
 def _lightweight_event(event: Dict) -> Dict:
     """Return a lightweight version of event without heavy player arrays"""
-    key_ids = event.get('keyPlayerIds', [])
+    # Ensure we always have key player IDs (at minimum the primary player)
+    key_ids = _ensure_key_player_ids(event)
+    
+    # Filter players to only key players
     home_players = [p for p in event.get('homePlayers', []) if p.get('playerId') in key_ids]
     away_players = [p for p in event.get('awayPlayers', []) if p.get('playerId') in key_ids]
+    
+    # Extract ball position with fallback to raw format
+    ball_pos = _extract_ball_position(event)
 
     return {
         'index': event.get('index'),
@@ -452,7 +490,7 @@ def _lightweight_event(event: Dict) -> Dict:
         'secondaryPlayer': event.get('secondaryPlayer'),
         'outcome': event.get('outcome'),
         'isGoal': event.get('isGoal'),
-        'ballPosition': event.get('ballPosition'),
+        'ballPosition': ball_pos,
         'keyPlayerIds': key_ids,
         # Include only key players, not all 22
         'homePlayers': home_players,
@@ -578,3 +616,108 @@ def search_similar_sequences(query_events: List[Dict], exclude_match_id: str = N
 def is_cache_ready() -> bool:
     """Check if cache is initialized"""
     return _cache_initialized
+
+
+# =============================================================================
+# HYBRID SEARCH: Combines DTW + TF-IDF
+# =============================================================================
+
+# Fixed weights for hybrid scoring
+HYBRID_WEIGHT_DTW = 0.6
+HYBRID_WEIGHT_TFIDF = 0.4
+HYBRID_INTERNAL_TOP_N = 50  # Fetch more results internally for better merging
+
+
+def search_similar_sequences_hybrid(query_events: List[Dict],
+                                     exclude_match_id: str = None,
+                                     exclude_seq_id: int = None,
+                                     top_n: int = 10) -> List[Dict]:
+    """
+    Hybrid search combining DTW (spatial/temporal) and TF-IDF (semantic) similarity.
+    
+    Algorithm:
+    1. Run DTW search with internal top N (e.g., 50)
+    2. Run TF-IDF search with internal top N (e.g., 50)
+    3. Merge results by (matchId, sequenceId) key
+    4. Compute combined score: (0.6 * DTW_sim) + (0.4 * TFIDF_sim)
+       - Missing algorithm score = 0 (rewards consensus)
+    5. Sort by combined score and return top N
+    
+    Args:
+        query_events: List of events in the query sequence
+        exclude_match_id: Match ID to exclude
+        exclude_seq_id: Sequence ID to exclude
+        top_n: Number of results to return
+    
+    Returns:
+        List of dicts with match info, sequence data, and combined similarity score
+    """
+    from .DTW import search_similar_sequences_dtw
+
+    # 1. Get DTW results (more than top_n for better merging)
+    query_sequence = {'events': query_events}
+    dtw_results = search_similar_sequences_dtw(
+        query_sequence=query_sequence,
+        top_n=HYBRID_INTERNAL_TOP_N,
+        exclude_match_id=str(exclude_match_id) if exclude_match_id else None,
+        exclude_seq_id=exclude_seq_id
+    )
+
+    # 2. Get TF-IDF results
+    tfidf_results = search_similar_sequences(
+        query_events=query_events,
+        exclude_match_id=exclude_match_id,
+        exclude_seq_id=exclude_seq_id,
+        top_n=HYBRID_INTERNAL_TOP_N
+    )
+
+    # 3. Build lookup maps by (matchId, sequenceId) key
+    dtw_map = {}
+    for r in dtw_results:
+        key = (str(r['matchId']), r['sequenceId'])
+        dtw_map[key] = r
+
+    tfidf_map = {}
+    for r in tfidf_results:
+        key = (str(r['matchId']), r['sequenceId'])
+        tfidf_map[key] = r
+
+    # 4. Collect all unique keys
+    all_keys = set(dtw_map.keys()) | set(tfidf_map.keys())
+
+    # 5. Compute combined scores
+    merged_results = []
+    for key in all_keys:
+        dtw_entry = dtw_map.get(key)
+        tfidf_entry = tfidf_map.get(key)
+
+        # Get similarity scores (0 if missing)
+        dtw_sim = dtw_entry['similarity'] if dtw_entry else 0.0
+        tfidf_sim = tfidf_entry['similarity'] if tfidf_entry else 0.0
+
+        # Combined score
+        combined_score = (HYBRID_WEIGHT_DTW * dtw_sim) + (HYBRID_WEIGHT_TFIDF * tfidf_sim)
+
+        # Use whichever entry exists for metadata (prefer DTW since it has alignment info)
+        base_entry = dtw_entry if dtw_entry else tfidf_entry
+
+        merged_results.append({
+            'matchId': base_entry['matchId'],
+            'sequenceId': base_entry['sequenceId'],
+            'setpieceType': base_entry.get('setpieceType', ''),
+            'teamId': base_entry.get('teamId', ''),
+            'time': base_entry.get('time', ''),
+            'events': base_entry.get('events', []),
+            'homeTeam': base_entry.get('homeTeam', ''),
+            'awayTeam': base_entry.get('awayTeam', ''),
+            'eventCount': base_entry.get('eventCount', 0),
+            'similarity': round(combined_score, 3),
+            'dtwSimilarity': round(dtw_sim, 3),
+            'tfidfSimilarity': round(tfidf_sim, 3),
+            'alignmentPath': dtw_entry.get('alignmentPath') if dtw_entry else None
+        })
+
+    # 6. Sort by combined score (descending) and return top N
+    merged_results.sort(key=lambda x: x['similarity'], reverse=True)
+
+    return merged_results[:top_n]

@@ -1023,7 +1023,7 @@ def api_search_event(request):
 
 @csrf_exempt
 def api_search_sequence(request):
-    """API: Search for similar sequences using DTW or TF-IDF"""
+    """API: Search for similar sequences using DTW, TF-IDF, or Hybrid"""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
 
@@ -1038,10 +1038,20 @@ def api_search_sequence(request):
     exclude_match_id = data.get('matchId')
     exclude_seq_id = data.get('sequenceId')
     top_n = data.get('topN', 10)
-    method = data.get('method', 'dtw')  # Default to DTW
+    method = data.get('method', 'hybrid')  # Default to hybrid
 
-    if method == 'dtw':
-        # Use DTW search
+    if method == 'hybrid':
+        # Use hybrid search (combines DTW + TF-IDF)
+        from .TF_IDF import search_similar_sequences_hybrid
+
+        results = search_similar_sequences_hybrid(
+            query_events=query_events,
+            exclude_match_id=exclude_match_id,
+            exclude_seq_id=exclude_seq_id,
+            top_n=top_n
+        )
+    elif method == 'dtw':
+        # Use DTW search only
         from .DTW import search_similar_sequences_dtw
 
         query_sequence = {'events': query_events}
@@ -1052,7 +1062,7 @@ def api_search_sequence(request):
             exclude_seq_id=exclude_seq_id
         )
     else:
-        # Use TF-IDF search
+        # Use TF-IDF search only
         from .TF_IDF import search_similar_sequences
 
         results = search_similar_sequences(
