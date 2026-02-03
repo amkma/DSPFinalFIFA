@@ -8,13 +8,14 @@ from typing import List, Dict, Tuple, Optional, Any
 from pathlib import Path
 import json
 
-# FastDTW for efficient DTW computation
+# FastDTW for efficient DTW computation (REQUIRED)
 try:
     from fastdtw import fastdtw
-    FASTDTW_AVAILABLE = True
 except ImportError:
-    FASTDTW_AVAILABLE = False
-    print("[DTW] Warning: fastdtw not installed. Run: pip install fastdtw")
+    raise ImportError(
+        "[DTW] ERROR: fastdtw is required but not installed.\n"
+        "Install it with: pip install fastdtw"
+    )
 
 
 # =============================================================================
@@ -340,8 +341,7 @@ def event_distance(features1: Dict[str, Any], features2: Dict[str, Any],
 def dtw_distance(seq1_features: List[Dict], seq2_features: List[Dict],
                  config: Optional[Dict] = None) -> Tuple[float, List]:
     """
-    Calculate DTW distance between two sequences of event features.
-    Uses FastDTW if available, otherwise falls back to basic DTW.
+    Calculate DTW distance between two sequences of event features using FastDTW.
 
     Returns: (total_distance, alignment_path)
     """
@@ -357,59 +357,12 @@ def dtw_distance(seq1_features: List[Dict], seq2_features: List[Dict],
         j = int(idx2[0]) if hasattr(idx2, '__len__') else int(idx2)
         return event_distance(seq1_features[i], seq2_features[j], config)
 
-    if FASTDTW_AVAILABLE:
-        # Use fastdtw with index arrays
-        seq1_indices = np.arange(n).reshape(-1, 1)
-        seq2_indices = np.arange(m).reshape(-1, 1)
+    # Use fastdtw with index arrays
+    seq1_indices = np.arange(n).reshape(-1, 1)
+    seq2_indices = np.arange(m).reshape(-1, 1)
 
-        distance, path = fastdtw(seq1_indices, seq2_indices, dist=dist_func)
-        return (distance, path)
-    else:
-        # Fallback: Basic DTW implementation
-        return _basic_dtw(seq1_features, seq2_features, config)
-
-
-def _basic_dtw(seq1_features: List[Dict], seq2_features: List[Dict],
-               config: Optional[Dict] = None) -> Tuple[float, List]:
-    """
-    Basic DTW implementation (O(n*m)) as fallback when fastdtw not available.
-    """
-    n, m = len(seq1_features), len(seq2_features)
-
-    # Initialize cost matrix
-    dtw_matrix = np.full((n + 1, m + 1), np.inf)
-    dtw_matrix[0, 0] = 0
-
-    # Fill the matrix
-    for i in range(1, n + 1):
-        for j in range(1, m + 1):
-            cost = event_distance(seq1_features[i-1], seq2_features[j-1], config)
-            dtw_matrix[i, j] = cost + min(
-                dtw_matrix[i-1, j],      # insertion
-                dtw_matrix[i, j-1],      # deletion
-                dtw_matrix[i-1, j-1]     # match
-            )
-
-    # Backtrack to find path
-    path = []
-    i, j = n, m
-    while i > 0 and j > 0:
-        path.append((i-1, j-1))
-        if i == 1:
-            j -= 1
-        elif j == 1:
-            i -= 1
-        else:
-            min_val = min(dtw_matrix[i-1, j], dtw_matrix[i, j-1], dtw_matrix[i-1, j-1])
-            if dtw_matrix[i-1, j-1] == min_val:
-                i, j = i-1, j-1
-            elif dtw_matrix[i-1, j] == min_val:
-                i -= 1
-            else:
-                j -= 1
-
-    path.reverse()
-    return (dtw_matrix[n, m], path)
+    distance, path = fastdtw(seq1_indices, seq2_indices, dist=dist_func)
+    return (distance, path)
 
 
 # =============================================================================

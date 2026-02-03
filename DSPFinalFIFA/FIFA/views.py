@@ -1,6 +1,14 @@
 """
 Views for FIFA World Cup Data Visualization
-"""
+This module provides three key components:
+1. DataLoader: Singleton for loading/caching FIFA World Cup JSON files
+2. MatchService: Business logic layer for match operations
+3. Django Views: HTTP endpoints for web UI and REST API
+
+Architecture:
+- DataLoader handles file I/O and caching
+- MatchService transforms raw JSON into domain models
+- Views orchestrate requests and return HTTP responses"""
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -16,23 +24,48 @@ from .models import (
 
 
 class DataLoader:
-    """Handles loading and caching of JSON data files"""
+    """Singleton data loader for FIFA World Cup JSON files.
     
-    _instance = None
-    _cache: Dict[str, Any] = {}
+    Responsibilities:
+    - Load metadata, events, and roster JSON files from disk
+    - Cache loaded data in memory to avoid repeated file I/O
+    - Provide unified interface for accessing match data
+    
+    Design Pattern: Singleton
+    Only one instance exists per server process, ensuring a single
+    shared cache across all requests.
+    """
+    
+    _instance = None  # Singleton instance
+    _cache: Dict[str, Any] = {}  # In-memory cache: {cache_key: data}
     
     def __new__(cls):
-        """Singleton pattern - only one instance"""
+        """Singleton constructor - always returns the same instance.
+        
+        This ensures the cache is shared across all DataLoader usages,
+        preventing memory bloat from multiple caches.
+        """
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
     
     @property
     def data_dir(self) -> Path:
+        """Root directory containing all FIFA World Cup data files."""
         return Path(settings.BASE_DIR) / 'FIFA_datan'
     
     def load_metadata(self, match_id: str) -> Optional[Dict]:
-        """Load match metadata"""
+        """Load match metadata (teams, stadium, competition info).
+        
+        Args:
+            match_id: Unique match identifier (e.g., '3812', '10502')
+        
+        Returns:
+            Dict with match metadata or None if file not found
+        
+        Cache Strategy:
+            Uses cache key 'metadata_{match_id}' to avoid reloading
+        """
         cache_key = f"metadata_{match_id}"
         if cache_key in self._cache:
             return self._cache[cache_key]
@@ -41,7 +74,7 @@ class DataLoader:
         if filepath.exists():
             with open(filepath, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # Metadata is a list with single item
+                # Metadata format: single object wrapped in array
                 result = data[0] if isinstance(data, list) and len(data) > 0 else data
                 self._cache[cache_key] = result
                 return result
@@ -88,14 +121,37 @@ class DataLoader:
 
 
 class MatchService:
-    """Service class for match-related operations"""
+    """Business logic layer for match operations.
+    
+    Responsibilities:
+    - Transform raw JSON into domain models (Match, Team, Stadium)
+    - Extract goals and build goal sequences with context
+    - Enrich events with player names from roster
+    
+    Separation of Concerns:
+    - DataLoader handles file I/O
+    - MatchService handles business logic
+    - Views orchestrate HTTP requests
+    """
     
     def __init__(self):
+        """Initialize with singleton DataLoader instance."""
         self.loader = DataLoader()
 
     @staticmethod
     def _build_team(team_data: Dict, kit_data: Dict) -> Team:
-        """Build a Team instance from metadata and kit data."""
+        """Construct Team model from raw metadata.
+        
+        Args:
+            team_data: Team info (id, name, shortName)
+            kit_data: Jersey colors (primaryColor, etc.)
+        
+        Returns:
+            Team model with all attributes populated
+        
+        Why Static:
+            Pure transformation - no instance state needed
+        """
         return Team(
             id=int(team_data.get('id', 0)),
             name=team_data.get('name', ''),
@@ -159,7 +215,22 @@ class MatchService:
         return match
     
     def get_match_goals(self, match_id: str, num_preceding: int = 5) -> List[GoalSequence]:
-        """Get all goals in a match with preceding events"""
+        """Extract all goals with context (preceding buildup events).
+        
+        Args:
+            match_id: Unique match identifier
+            num_preceding: Number of events before goal to include (default: 5)
+        
+        Returns:
+            List of GoalSequence models with goal + context events
+        
+        Algorithm:
+            1. Load events and roster
+            2. Build player ID to name lookup map
+            3. Iterate through events chronologically
+            4. When goal found, capture preceding N events
+            5. Enrich all events with player names from roster
+        """
         match = self.get_match(match_id)
         if not match:
             return []
