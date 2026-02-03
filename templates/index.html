@@ -11,7 +11,6 @@
 </head>
 <body>
     <div class="app">
-        <!-- Header -->
         <header class="header">
             <div class="header-content">
                 <div class="logo">
@@ -24,7 +23,6 @@
             </div>
         </header>
 
-        <!-- Main Content -->
         <main class="main">
             <section class="matches-section">
                 <h2 class="section-title">
@@ -32,12 +30,10 @@
                     World Cup Matches
                 </h2>
                 <div class="matches-grid" id="matchesGrid">
-                    <!-- Matches will be rendered by JavaScript -->
-                </div>
+                    </div>
             </section>
         </main>
 
-        <!-- Goals Modal -->
         <div class="modal" id="goalsModal">
             <div class="modal-overlay"></div>
             <div class="modal-container">
@@ -55,13 +51,11 @@
                 </div>
                 <div class="modal-body">
                     <div class="goals-grid" id="goalsGrid">
-                        <!-- Goals will be rendered by JavaScript -->
-                    </div>
+                        </div>
                 </div>
             </div>
         </div>
 
-        <!-- Pitch Modal -->
         <div class="modal" id="pitchModal">
             <div class="modal-overlay"></div>
             <div class="modal-container pitch-modal">
@@ -82,41 +76,30 @@
                 </div>
                 <div class="modal-body pitch-modal-body">
                     <div class="pitch-wrapper">
-                        <!-- Dual pitch container (side by side when comparison active) -->
                         <div class="dual-pitch-container" id="dualPitchContainer">
-                            <!-- Query pitch (left side) -->
                             <div class="query-pitch-section" id="queryPitchSection">
                                 <div class="pitch-container">
                                     <canvas id="pitchCanvas"></canvas>
                                     <div class="player-tooltip" id="playerTooltip"></div>
                                 </div>
                                 <div class="query-events-list" id="queryEventsList">
-                                    <!-- Query sequence events rendered by JS -->
-                                </div>
+                                    </div>
                             </div>
-                            
-                            <!-- Comparison pitch (right side, hidden by default) -->
+
                             <div class="comparison-pitch-section" id="comparisonPitchSection" style="display: none;">
-                                <div class="comparison-header-compact">
-                                    <span class="comparison-label">Similar Play</span>
-                                    <span class="similarity-badge" id="similarityScore">0.00</span>
-                                    <span class="comparison-match-info" id="comparisonMatchInfo"></span>
-                                </div>
                                 <div class="pitch-container comparison-pitch">
                                     <canvas id="comparisonCanvas"></canvas>
                                     <div class="player-tooltip" id="comparisonTooltip"></div>
                                 </div>
                                 <div class="comparison-events-list" id="comparisonEventsList">
-                                    <!-- Comparison sequence events rendered by JS -->
-                                </div>
+                                    </div>
                             </div>
                         </div>
-                        
+
                         <div class="search-buttons" id="searchButtons">
                             <select class="search-method-select" id="searchMethodSelect">
-                                <option value="hybrid" selected>Hybrid (DTW+TF-IDF)</option>
-                                <option value="dtw">DTW Only</option>
-                                <option value="tfidf">TF-IDF Only</option>
+                                <option value="dtw" selected>DTW</option>
+                                <option value="tfidf">TF-IDF</option>
                             </select>
                             <button class="search-btn" id="searchSequenceBtn">🔍 Search Similar Sequence</button>
                         </div>
@@ -141,19 +124,15 @@
                             <button class="back-btn" id="searchBackBtn" style="display: none;">← Back</button>
                         </div>
                         <div class="pass-sequence-list" id="passSequenceList">
-                            <!-- Pass sequence will be rendered by JavaScript -->
-                        </div>
-                        <!-- Search results container (hidden by default) -->
+                            </div>
                         <div class="search-results" id="searchResults" style="display: none;">
-                            <!-- Search results will be rendered by JavaScript -->
-                        </div>
+                            </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Pass matches data to JavaScript -->
     <script>
         const matchesData = {{ matches|safe }};
     </script>

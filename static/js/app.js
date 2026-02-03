@@ -197,8 +197,7 @@ class App {
         this.searchResults = document.getElementById('searchResults');
         this.searchBackBtn = document.getElementById('searchBackBtn');
         this.panelTitle = document.getElementById('panelTitle');
-        this.similarityScore = document.getElementById('similarityScore');
-        this.comparisonMatchInfo = document.getElementById('comparisonMatchInfo');
+        // REMOVED: this.similarityScore and this.comparisonMatchInfo
         this.searchButtons = document.getElementById('searchButtons');
         this.pitchLegend = document.getElementById('pitchLegend');
 
@@ -698,31 +697,16 @@ class App {
     }
 
     _filterPlayersByKeyIds(event, allowEmptyKeyIds) {
-        // Build key player IDs, ensuring primary player is always included
-        let keyIds = [...(event.keyPlayerIds || [])];
+        const keyIds = event.keyPlayerIds || [];
+        const useAllPlayers = allowEmptyKeyIds && keyIds.length === 0;
 
-        // Always include primary player if present
-        const playerId = event.playerId;
-        if (playerId && !keyIds.includes(playerId)) {
-            keyIds.push(playerId);
-        }
-
-        // Include secondary player if it's a numeric ID
-        const secondaryId = event.secondaryPlayerId;
-        if (typeof secondaryId === 'number' && !keyIds.includes(secondaryId)) {
-            keyIds.push(secondaryId);
-        }
-
-        // If still no key IDs and allowEmptyKeyIds, show pre-filtered players from backend
-        // (backend now ensures key players are included)
-        if (keyIds.length === 0 && allowEmptyKeyIds) {
+        if (useAllPlayers) {
             return {
                 homePlayers: event.homePlayers || [],
                 awayPlayers: event.awayPlayers || []
             };
         }
 
-        // Filter to only key players
         return {
             homePlayers: (event.homePlayers || []).filter(p => keyIds.includes(p.playerId)),
             awayPlayers: (event.awayPlayers || []).filter(p => keyIds.includes(p.playerId))
@@ -968,7 +952,7 @@ class App {
 
         // Show comparison pitch section (side by side)
         this.comparisonPitchSection.style.display = 'block';
-        this.similarityScore.textContent = result.similarity.toFixed(2);
+        // REMOVED: Similarity score text update logic
 
         // Add comparison-active class to enable side-by-side layout
         if (this.dualPitchContainer) {
@@ -987,12 +971,7 @@ class App {
         if (this.searchButtons) this.searchButtons.style.display = 'none';
         if (this.pitchLegend) this.pitchLegend.style.display = 'none';
 
-        // Show match info in compact header
-        if (this.comparisonMatchInfo) {
-            const homeName = result.homeTeam?.shortName || result.homeTeam?.name || 'Home';
-            const awayName = result.awayTeam?.shortName || result.awayTeam?.name || 'Away';
-            this.comparisonMatchInfo.textContent = `${homeName} vs ${awayName}`;
-        }
+        // REMOVED: Match info text update logic
 
         // Build event data for comparison
         let comparisonEvent, comparisonSequence;
