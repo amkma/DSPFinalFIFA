@@ -59,11 +59,14 @@ class EventVisualizer {
     _setupCanvas() {
         // Set canvas size
         const container = this._canvas.parentElement;
-        this._canvas.width = container.offsetWidth || 800;
 
-        // FIXED: Remove hardcoded min-height to prevent vertical stretching (squashing)
+        // [FIX] Ensure we get the actual computed width
+        // If container is hidden, clientWidth is 0, so we default to 800
+        const width = container.clientWidth || 800;
+
+        this._canvas.width = width;
         // Maintain standard pitch aspect ratio (105x68 ≈ 0.647)
-        this._canvas.height = this._canvas.width * 0.647;
+        this._canvas.height = width * 0.647;
     }
 
     _bindEvents() {
@@ -97,7 +100,7 @@ class EventVisualizer {
         const snapshot = eventData.snapshot || {};
         const event = eventData.event || eventData.goal || {};
 
-        // Build team colors map (use string keys for consistency)
+        // Build team colors map
         const teamColors = {};
         if (eventData.homeTeam) {
             teamColors[String(eventData.homeTeam.id)] = eventData.homeTeam.primaryColor || '#3b82f6';
@@ -146,6 +149,9 @@ class EventVisualizer {
     resize() {
         if (this._canvas) {
             this._setupCanvas();
+            // Re-instantiate renderer to handle new canvas dimensions context
+            this._renderer = new PitchRenderer(this._canvas);
+
             if (this._currentEventData) {
                 this.visualize(this._currentEventData);
             }
@@ -197,7 +203,6 @@ class App {
         this.searchResults = document.getElementById('searchResults');
         this.searchBackBtn = document.getElementById('searchBackBtn');
         this.panelTitle = document.getElementById('panelTitle');
-        // REMOVED: this.similarityScore and this.comparisonMatchInfo
         this.searchButtons = document.getElementById('searchButtons');
         this.pitchLegend = document.getElementById('pitchLegend');
 
@@ -215,23 +220,18 @@ class App {
     }
 
     _bindEvents() {
-        // Plays modal close
         if (this.goalsCloseBtn) {
             this.goalsCloseBtn.addEventListener('click', () => this._closeGoalsModal());
         }
         if (this.goalsModal) {
             this.goalsModal.querySelector('.modal-overlay')?.addEventListener('click', () => this._closeGoalsModal());
         }
-
-        // Pitch modal close
         if (this.pitchCloseBtn) {
             this.pitchCloseBtn.addEventListener('click', () => this._closePitchModal());
         }
         if (this.pitchModal) {
             this.pitchModal.querySelector('.modal-overlay')?.addEventListener('click', () => this._closePitchModal());
         }
-
-        // Search button - uses selected method
         if (this.searchSequenceBtn) {
             this.searchSequenceBtn.addEventListener('click', () => this._searchSimilarSequence());
         }
@@ -239,7 +239,6 @@ class App {
             this.searchBackBtn.addEventListener('click', () => this._exitSearchMode());
         }
 
-        // Keyboard
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 if (this._searchMode) {
@@ -251,7 +250,6 @@ class App {
             }
         });
 
-        // Window resize
         window.addEventListener('resize', () => {
             if (this._visualizer) {
                 this._visualizer.resize();
@@ -326,7 +324,6 @@ class App {
     async _selectMatch(matchId) {
         this._selectedMatchId = matchId;
 
-        // Show loading
         if (this.goalsGrid) {
             this.goalsGrid.innerHTML = `
                 <div class="loading-state">
@@ -336,10 +333,8 @@ class App {
             `;
         }
 
-        // Open modal immediately
         this._openGoalsModal();
 
-        // Load plays
         try {
             const response = await fetch(`/api/matches/${matchId}/plays/`);
             const data = await response.json();
@@ -400,7 +395,6 @@ class App {
             return;
         }
 
-        // Create filter bar
         const filterBar = document.createElement('div');
         filterBar.className = 'filter-bar';
         filterBar.innerHTML = `
@@ -410,7 +404,6 @@ class App {
             <button class="filter-btn" data-filter="goal">Goals ⚽</button>
         `;
 
-        // Create list container
         const list = document.createElement('div');
         list.className = 'plays-list';
         list.id = 'playsList';
@@ -426,7 +419,6 @@ class App {
         this.goalsGrid.appendChild(filterBar);
         this.goalsGrid.appendChild(list);
 
-        // Bind filter events
         filterBar.querySelectorAll('.filter-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -441,11 +433,9 @@ class App {
         container.className = 'sequence-container';
         container.dataset.sequenceId = sequence.sequenceId;
 
-        // Sequence header
         const header = document.createElement('div');
         header.className = 'sequence-header';
 
-        // Compare as strings
         const homeTeamId = String(this._currentMatch?.homeTeam?.id || '');
         const seqTeamId = String(sequence.teamId || '');
         const isHomeTeam = seqTeamId === homeTeamId;
@@ -467,50 +457,21 @@ class App {
             <button class="view-seq-btn">View →</button>
         `;
 
-        // Store sequence data
         container._sequence = sequence;
-
         container.appendChild(header);
 
-        // View sequence - opens pitch modal with first event
         header.addEventListener('click', () => {
             if (sequence.events && sequence.events.length > 0) {
                 this._openPitchModal(sequence.events[0], sequence);
             }
         });
 
-        // Make View button also trigger interactions but without bubbling issues
         const viewBtn = header.querySelector('.view-seq-btn');
         if (viewBtn) {
-            viewBtn.style.pointerEvents = 'none'; // let click pass through to header
+            viewBtn.style.pointerEvents = 'none';
         }
 
         return container;
-    }
-
-    _populateEventsList(eventsList, sequence) {
-        // Legacy support function - no longer used but kept to avoid errors if referenced
-    }
-
-    _createEventItem(event, eventIndex, sequence) {
-        const item = document.createElement('div');
-        item.className = 'event-item' + (event.isGoal ? ' goal-event' : '');
-        item.dataset.eventType = event.eventLabel || event.eventType;
-
-        const icon = event.isGoal ? '⚽' : (EVENT_ICONS[event.eventLabel] || EVENT_ICONS['Unknown']);
-
-        item.innerHTML = `
-            <span class="event-num">${eventIndex + 1}</span>
-            <span class="event-icon">${icon}</span>
-            <span class="event-player">${event.playerName || 'Unknown'}</span>
-            <span class="event-type">${event.isGoal ? 'GOAL!' : (event.eventLabel || event.eventType)}</span>
-            ${event.outcome ? `<span class="event-outcome">${event.outcome}</span>` : ''}
-        `;
-
-        // Click row to view on pitch
-        item.addEventListener('click', () => this._openPitchModal(event, sequence));
-
-        return item;
     }
 
     _filterPlays(filter) {
@@ -525,7 +486,6 @@ class App {
                 return;
             }
 
-            // Filter based on sequence events data (not DOM)
             let hasMatch = false;
             if (filter === 'all') {
                 hasMatch = true;
@@ -536,52 +496,27 @@ class App {
             }
 
             seq.style.display = hasMatch ? 'block' : 'none';
-
-            // Also filter visible event items if loaded
-            const eventsList = seq.querySelector('.events-list');
-            if (eventsList && eventsList.dataset.loaded === 'true') {
-                eventsList.querySelectorAll('.event-item').forEach(item => {
-                    const eventType = item.dataset.eventType;
-                    const isGoal = item.classList.contains('goal-event');
-
-                    let show = false;
-                    if (filter === 'all') {
-                        show = true;
-                    } else if (filter === 'goal') {
-                        show = isGoal;
-                    } else {
-                        show = eventType === filter;
-                    }
-                    item.style.display = show ? 'flex' : 'none';
-                });
-            }
         });
     }
 
     _openPitchModal(event, sequence) {
-        // Reset any previous search state when opening a new event
         if (this._searchMode) {
             this._exitSearchMode();
         }
-        // Also hide comparison section even if not in search mode
         if (this.comparisonPitchSection) {
             this.comparisonPitchSection.style.display = 'none';
         }
-        // Remove comparison-active class
         if (this.dualPitchContainer) {
             this.dualPitchContainer.classList.remove('comparison-active');
         }
         this._comparisonVisualizer = null;
 
-        // Restore search buttons and legend
         if (this.searchButtons) this.searchButtons.style.display = 'flex';
         if (this.pitchLegend) this.pitchLegend.style.display = 'flex';
 
-        // Store current event and sequence for search
         this._currentEvent = event;
         this._currentSequence = sequence;
 
-        // Update header
         if (this.pitchMatchTitle) {
             const homeName = this._currentMatch?.homeTeam?.name || 'Home';
             const awayName = this._currentMatch?.awayTeam?.name || 'Away';
@@ -596,18 +531,13 @@ class App {
             this.goalMinute.textContent = event.time || sequence.time || '';
         }
 
-        // Render event sequence in right panel (keep for navigation)
         this._renderEventSequence(event, sequence);
-
-        // Render query events list below query pitch (hidden until comparison active)
         this._renderQueryEventsList(sequence.events || [], event);
 
-        // Show modal
         if (this.pitchModal) {
             this.pitchModal.classList.add('active');
         }
 
-        // Initialize and render pitch
         setTimeout(() => {
             if (!this._visualizer) {
                 this._visualizer = new EventVisualizer('pitchCanvas', 'playerTooltip');
@@ -636,11 +566,8 @@ class App {
         if (!this.passSequenceList) return;
 
         this.passSequenceList.innerHTML = '';
-
-        // Store sequence reference for click handlers
         this._currentSequence = sequence;
 
-        // Show all events in sequence
         const events = sequence.events || [];
 
         events.forEach((event, i) => {
@@ -658,20 +585,15 @@ class App {
                 <span class="pass-type">${event.isGoal ? 'GOAL!' : (event.eventLabel || event.eventType)}</span>
             `;
 
-            // Click handler to update pitch
             item.addEventListener('click', () => {
-                // Remove active from all items
                 this.passSequenceList.querySelectorAll('.pass-item').forEach(el => el.classList.remove('active'));
                 item.classList.add('active');
-
-                // Update pitch with this event
                 this._updatePitchForEvent(event);
             });
 
             this.passSequenceList.appendChild(item);
         });
 
-        // Scroll to active item
         const activeItem = this.passSequenceList.querySelector('.pass-item.active');
         if (activeItem) {
             activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -680,8 +602,6 @@ class App {
 
     _updatePitchForEvent(event) {
         if (!this._visualizer || !this._currentSequence) return;
-
-        // Store current event for search
         this._currentEvent = event;
 
         const eventData = this._buildEventData(
@@ -743,18 +663,12 @@ class App {
         };
     }
 
-    // =========================================================================
-    // SEARCH FUNCTIONALITY
-    // =========================================================================
-
     _showSearchLoading() {
-        // Reset any previous comparison
         if (this.comparisonPitchSection) {
             this.comparisonPitchSection.style.display = 'none';
         }
         this._comparisonVisualizer = null;
 
-        // Show loading in results panel
         this.passSequenceList.style.display = 'none';
         this.searchResults.style.display = 'flex';
         this.searchResults.innerHTML = `
@@ -767,11 +681,8 @@ class App {
 
     async _searchSimilarSequence() {
         if (!this._currentSequence || !this._currentMatch) return;
-
-        // Get selected search method
         const method = this.searchMethodSelect?.value || 'hybrid';
 
-        // Show loading
         this.searchSequenceBtn.classList.add('loading');
         this.searchSequenceBtn.disabled = true;
         if (this.searchMethodSelect) this.searchMethodSelect.disabled = true;
@@ -818,13 +729,11 @@ class App {
         this._searchType = searchType;
         this._searchResults = results;
 
-        // Update UI
         this.passSequenceList.style.display = 'none';
         this.searchResults.style.display = 'flex';
         this.searchBackBtn.style.display = 'block';
         this.panelTitle.textContent = searchType === 'event' ? 'Similar Events' : 'Similar Sequences';
 
-        // Render results
         this._renderSearchResults(results);
     }
 
@@ -833,44 +742,36 @@ class App {
         this._searchType = null;
         this._searchResults = null;
 
-        // Hide comparison pitch section
         if (this.comparisonPitchSection) {
             this.comparisonPitchSection.style.display = 'none';
         }
 
-        // Remove comparison-active class
         if (this.dualPitchContainer) {
             this.dualPitchContainer.classList.remove('comparison-active');
         }
 
-        // SHRINK MODAL: Remove expanded class to revert to default size
         const modalContainer = document.querySelector('.pitch-modal');
         if (modalContainer) {
             modalContainer.classList.remove('expanded');
         }
 
-        // Restore search buttons and legend
         if (this.searchButtons) this.searchButtons.style.display = 'flex';
         if (this.pitchLegend) this.pitchLegend.style.display = 'flex';
 
-        // Resize visualizer back to full width
         setTimeout(() => {
             if (this._visualizer) {
                 this._visualizer.resize();
             }
         }, 50);
 
-        // Destroy comparison visualizer to force fresh canvas
         this._comparisonVisualizer = null;
 
-        // Reset UI
         this.passSequenceList.style.display = 'flex';
         this.searchResults.style.display = 'none';
         this.searchBackBtn.style.display = 'none';
         this.panelTitle.textContent = 'Pass Sequence';
         this.searchResults.innerHTML = '';
 
-        // Reset scroll position
         const pitchWrapper = document.querySelector('.pitch-wrapper');
         if (pitchWrapper) {
             pitchWrapper.scrollTop = 0;
@@ -902,7 +803,6 @@ class App {
             const awayTeam = result.awayTeam?.shortName || 'AWY';
             const matchLabel = `${homeTeam} vs ${awayTeam}`;
 
-            // Details based on search type
             let details = '';
             if (this._searchType === 'event') {
                 const e = result.event;
@@ -911,7 +811,6 @@ class App {
                 details = `${result.setpieceType || 'Open Play'} • ${result.eventCount || 0} events • ${result.time || ''}`;
             }
 
-            // Similarity badge color
             const sim = result.similarity;
             const simClass = sim >= 0.7 ? '' : sim >= 0.4 ? 'medium' : 'low';
 
@@ -924,12 +823,9 @@ class App {
                 <span class="result-similarity ${simClass}">${sim.toFixed(2)}</span>
             `;
 
-            // Click to show comparison
             item.addEventListener('click', () => {
-                // Remove active from all
                 this.searchResults.querySelectorAll('.search-result-item').forEach(el => el.classList.remove('active'));
                 item.classList.add('active');
-
                 this._showComparison(result);
             });
 
@@ -941,46 +837,29 @@ class App {
     _showComparison(result) {
         if (!this.comparisonPitchSection) return;
 
-        // Store for later use when clicking events
         this._currentComparisonResult = result;
 
-        // EXPAND MODAL: Toggle expansion class on the main modal container
         const modalContainer = document.querySelector('.pitch-modal');
         if (modalContainer) {
             modalContainer.classList.add('expanded');
         }
 
-        // Show comparison pitch section (side by side)
+        // [FIX] Explicitly reset display block before calculation
         this.comparisonPitchSection.style.display = 'block';
-        // REMOVED: Similarity score text update logic
 
-        // Add comparison-active class to enable side-by-side layout
         if (this.dualPitchContainer) {
             this.dualPitchContainer.classList.add('comparison-active');
         }
 
-        // Resize original visualizer to fit new half-width layout
-        // Use timeout to allow DOM reflow to complete
-        setTimeout(() => {
-            if (this._visualizer) {
-                this._visualizer.resize();
-            }
-        }, 50);
-
-        // Hide search buttons and legend when showing comparison
         if (this.searchButtons) this.searchButtons.style.display = 'none';
         if (this.pitchLegend) this.pitchLegend.style.display = 'none';
 
-        // REMOVED: Match info text update logic
-
-        // Build event data for comparison
         let comparisonEvent, comparisonSequence;
 
         if (this._searchType === 'event') {
             comparisonEvent = result.event;
             comparisonSequence = { events: [result.event] };
         } else {
-            // For sequence, use first event
             const events = result.events || [];
             comparisonEvent = events[0] || events[events.length - 1];
             comparisonSequence = result;
@@ -988,10 +867,7 @@ class App {
 
         if (!comparisonEvent) return;
 
-        // Store current comparison event
         this._currentComparisonEvent = comparisonEvent;
-
-        // Render comparison events list
         this._renderComparisonEventsList(comparisonSequence.events || [], comparisonEvent);
 
         const eventData = this._buildEventData(
@@ -1003,20 +879,31 @@ class App {
             true
         );
 
-        // Initialize comparison visualizer after DOM is ready
-        setTimeout(() => {
-            if (!this._comparisonVisualizer) {
-                this._comparisonVisualizer = new EventVisualizer('comparisonCanvas', 'comparisonTooltip');
-            }
-            this._comparisonVisualizer.visualize(eventData);
-        }, 150);
+        // [FIX] Robust resizing logic
+        // Use double requestAnimationFrame to wait for layout repaint
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                // Resize the main visualizer (left side) as it might have shrunk
+                if (this._visualizer) {
+                    this._visualizer.resize();
+                }
+
+                // Initialize comparison visualizer (right side)
+                if (!this._comparisonVisualizer) {
+                    this._comparisonVisualizer = new EventVisualizer('comparisonCanvas', 'comparisonTooltip');
+                }
+
+                // Force resize BEFORE visualize to prevent squashing
+                this._comparisonVisualizer.resize();
+                this._comparisonVisualizer.visualize(eventData);
+            });
+        });
     }
 
     _renderQueryEventsList(events, activeEvent) {
         if (!this.queryEventsList) return;
 
         this.queryEventsList.innerHTML = '';
-
         if (!events || events.length === 0) return;
 
         events.forEach((event, index) => {
@@ -1034,11 +921,9 @@ class App {
                 <span class="query-event-time">${time}</span>
             `;
 
-            // Click to update query pitch
             item.addEventListener('click', () => {
                 this.queryEventsList.querySelectorAll('.query-event-item').forEach(el => el.classList.remove('active'));
                 item.classList.add('active');
-
                 this._updateQueryPitch(event);
             });
 
@@ -1048,8 +933,6 @@ class App {
 
     _updateQueryPitch(event) {
         if (!this._visualizer || !this._currentSequence) return;
-
-        // Store current event
         this._currentEvent = event;
 
         const eventData = this._buildEventData(
@@ -1089,11 +972,9 @@ class App {
                 <span class="comparison-event-time">${time}</span>
             `;
 
-            // Click to update comparison pitch
             item.addEventListener('click', () => {
                 this.comparisonEventsList.querySelectorAll('.comparison-event-item').forEach(el => el.classList.remove('active'));
                 item.classList.add('active');
-
                 this._updateComparisonPitch(event, events);
             });
 
@@ -1117,12 +998,7 @@ class App {
     }
 }
 
-
-// =============================================================================
-// Initialize app when DOM is ready
-// =============================================================================
 document.addEventListener('DOMContentLoaded', () => {
-    // Check if matchesData exists (passed from Django template)
     if (typeof matchesData !== 'undefined') {
         window.app = new App(matchesData);
     } else {

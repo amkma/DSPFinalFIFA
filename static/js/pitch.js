@@ -80,14 +80,15 @@ class PlayerMarker extends Marker {
     get isHome() { return this._isHome; }
 
     render(ctx, canvasWidth, canvasHeight) {
+        ctx.save(); // [FIX] Save state to prevent bleeding
         const pos = this._position.toCanvas(canvasWidth, canvasHeight);
-        
+
         // Draw outer glow (smaller)
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, this._radius + 2, 0, Math.PI * 2);
         ctx.fillStyle = this._isHome ? 'rgba(0, 149, 246, 0.25)' : 'rgba(239, 68, 68, 0.25)';
         ctx.fill();
-        
+
         // Draw player circle
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, this._radius, 0, Math.PI * 2);
@@ -96,13 +97,14 @@ class PlayerMarker extends Marker {
         ctx.strokeStyle = this._isHome ? '#0095f6' : '#ef4444';
         ctx.lineWidth = 1.5;
         ctx.stroke();
-        
+
         // Draw jersey number (smaller font)
         ctx.fillStyle = this._textColor;
         ctx.font = 'bold 9px Inter, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(this._jerseyNumber.toString(), pos.x, pos.y);
+        ctx.restore(); // [FIX] Restore state
     }
 
     containsPoint(px, py, canvasWidth, canvasHeight) {
@@ -133,14 +135,15 @@ class BallMarker extends Marker {
     }
 
     render(ctx, canvasWidth, canvasHeight) {
+        ctx.save(); // [FIX] Save state
         const pos = this._position.toCanvas(canvasWidth, canvasHeight);
-        
+
         // Draw ball glow
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, this._radius + 6, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
         ctx.fill();
-        
+
         // Draw ball outer
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, this._radius, 0, Math.PI * 2);
@@ -149,12 +152,13 @@ class BallMarker extends Marker {
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 2;
         ctx.stroke();
-        
+
         // Draw ball pattern (pentagon shapes)
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, this._radius * 0.4, 0, Math.PI * 2);
         ctx.fillStyle = '#000000';
         ctx.fill();
+        ctx.restore(); // [FIX] Restore state
     }
 
     containsPoint(px, py, canvasWidth, canvasHeight) {
@@ -179,12 +183,13 @@ class PassArrow {
     }
 
     render(ctx, canvasWidth, canvasHeight) {
+        ctx.save(); // [FIX] Save state
         const from = this._from.toCanvas(canvasWidth, canvasHeight);
         const to = this._to.toCanvas(canvasWidth, canvasHeight);
-        
+
         // Calculate opacity based on sequence (earlier = more faded)
         const opacity = 0.4 + (this._index / this._total) * 0.6;
-        
+
         // Draw line
         ctx.beginPath();
         ctx.moveTo(from.x, from.y);
@@ -196,11 +201,11 @@ class PassArrow {
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.globalAlpha = 1;
-        
+
         // Draw arrowhead
         const angle = Math.atan2(to.y - from.y, to.x - from.x);
         const arrowLength = 12;
-        
+
         ctx.beginPath();
         ctx.moveTo(to.x, to.y);
         ctx.lineTo(
@@ -215,7 +220,7 @@ class PassArrow {
         ctx.fillStyle = this._color;
         ctx.globalAlpha = opacity;
         ctx.fill();
-        ctx.globalAlpha = 1;
+        ctx.restore(); // [FIX] Restore state (handles globalAlpha reset)
     }
 }
 
@@ -234,7 +239,7 @@ class PitchRenderer {
         this._ball = null;
         this._passArrows = [];
         this._eventMarker = null;  // {type, position}
-        
+
         // Pitch colors
         this._pitchColor = '#1a472a';
         this._lineColor = '#ffffff';
@@ -251,8 +256,7 @@ class PitchRenderer {
             isHome
         );
     }
-    
-    // Set event marker to draw at ball position
+
     setEventMarker(type, position) {
         if (type && position) {
             this._eventMarker = { type, position };
@@ -260,22 +264,21 @@ class PitchRenderer {
             this._eventMarker = null;
         }
     }
-    
-    // Draw event-specific marker at position
+
     _drawEventMarker() {
         if (!this._eventMarker) return;
-        
+
         const ctx = this._ctx;
         const pos = new Position(this._eventMarker.position.x, this._eventMarker.position.y)
             .toCanvas(this._width, this._height);
-        
+
         const type = this._eventMarker.type;
-        
+
         ctx.save();
         ctx.font = 'bold 24px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        
+
         const markers = {
             'Challenge': { icon: '⚔️', fill: '#ff4444', shadow: '#ff0000', blur: 10 },
             'Shot': { icon: '💥', fill: '#ffcc00', shadow: '#ffaa00', blur: 10 },
@@ -291,11 +294,10 @@ class PitchRenderer {
             ctx.shadowBlur = marker.blur;
             ctx.fillText(marker.icon, pos.x, pos.y - 25);
         }
-        
+
         ctx.restore();
     }
 
-    // Clear and draw pitch
     drawPitch() {
         const ctx = this._ctx;
         const w = this._width;
@@ -303,6 +305,8 @@ class PitchRenderer {
         const p = this._padding;
         const drawW = w - p * 2;
         const drawH = h - p * 2;
+
+        ctx.save(); // [FIX] Save state before drawing background
 
         // Background
         ctx.fillStyle = '#0a1f12';
@@ -337,7 +341,7 @@ class PitchRenderer {
         ctx.stroke();
 
         // Center circle
-        const centerCircleRadius = drawW * 0.0873; // ~9.15m / 105m
+        const centerCircleRadius = drawW * 0.0873;
         ctx.beginPath();
         ctx.arc(w / 2, h / 2, centerCircleRadius, 0, Math.PI * 2);
         ctx.stroke();
@@ -349,29 +353,23 @@ class PitchRenderer {
         ctx.fill();
 
         // Penalty areas
-        const penaltyAreaWidth = drawW * 0.157; // ~16.5m / 105m
+        const penaltyAreaWidth = drawW * 0.157;
         const penaltyAreaHeight = drawH * 0.6;
         const penaltyAreaY = (h - penaltyAreaHeight) / 2;
 
-        // Left penalty area
         ctx.strokeRect(p, penaltyAreaY, penaltyAreaWidth, penaltyAreaHeight);
-
-        // Right penalty area
         ctx.strokeRect(w - p - penaltyAreaWidth, penaltyAreaY, penaltyAreaWidth, penaltyAreaHeight);
 
         // Goal areas
-        const goalAreaWidth = drawW * 0.0524; // ~5.5m / 105m
+        const goalAreaWidth = drawW * 0.0524;
         const goalAreaHeight = drawH * 0.265;
         const goalAreaY = (h - goalAreaHeight) / 2;
 
-        // Left goal area
         ctx.strokeRect(p, goalAreaY, goalAreaWidth, goalAreaHeight);
-
-        // Right goal area
         ctx.strokeRect(w - p - goalAreaWidth, goalAreaY, goalAreaWidth, goalAreaHeight);
 
         // Penalty spots
-        const penaltySpotX = drawW * 0.105; // ~11m / 105m
+        const penaltySpotX = drawW * 0.105;
         ctx.beginPath();
         ctx.arc(p + penaltySpotX, h / 2, 4, 0, Math.PI * 2);
         ctx.fill();
@@ -380,7 +378,7 @@ class PitchRenderer {
         ctx.arc(w - p - penaltySpotX, h / 2, 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // Goals (behind lines)
+        // Goals
         const goalWidth = 8;
         const goalHeight = drawH * 0.11;
         const goalY = (h - goalHeight) / 2;
@@ -388,20 +386,17 @@ class PitchRenderer {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.fillRect(p - goalWidth, goalY, goalWidth, goalHeight);
         ctx.fillRect(w - p, goalY, goalWidth, goalHeight);
+
+        ctx.restore(); // [FIX] Restore state
     }
 
-    // Set players data
     setPlayers(homePlayers, awayPlayers, homeTeam, awayTeam) {
         this._players = [];
-
-        // Process home players
         homePlayers.forEach(p => {
             if (p.x !== undefined && p.y !== undefined) {
                 this._players.push(this._createPlayerMarker(p, homeTeam, true));
             }
         });
-
-        // Process away players
         awayPlayers.forEach(p => {
             if (p.x !== undefined && p.y !== undefined) {
                 this._players.push(this._createPlayerMarker(p, awayTeam, false));
@@ -409,7 +404,6 @@ class PitchRenderer {
         });
     }
 
-    // Set ball position
     setBall(ballData) {
         if (ballData && ballData.x !== undefined && ballData.y !== undefined) {
             this._ball = new BallMarker(new Position(ballData.x, ballData.y, ballData.z || 0));
@@ -418,32 +412,28 @@ class PitchRenderer {
         }
     }
 
-    // Set pass sequence
     setPassSequence(passes, teamColors) {
         this._passArrows = [];
-        
         if (!passes || passes.length === 0) return;
 
-        // We need to estimate positions for passes
-        // Since we have ball positions for each pass, use those
         for (let i = 0; i < passes.length - 1; i++) {
             const currentPass = passes[i];
             const nextPass = passes[i + 1];
-            
+
             if (currentPass.ballPosition && nextPass.ballPosition) {
                 const from = new Position(currentPass.ballPosition.x, currentPass.ballPosition.y);
                 const to = new Position(nextPass.ballPosition.x, nextPass.ballPosition.y);
-                
-                // Determine color based on team
                 const color = teamColors[currentPass.teamId] || '#ffff00';
-                
                 this._passArrows.push(new PassArrow(from, to, color, i, passes.length));
             }
         }
     }
 
-    // Render everything
     render() {
+        // [FIX] Explicitly clear canvas before drawing next frame
+        // This solves the "multiple graphs rendered on top of each other" bug
+        this._ctx.clearRect(0, 0, this._width, this._height);
+
         // Draw pitch
         this.drawPitch();
 
@@ -461,12 +451,11 @@ class PitchRenderer {
         if (this._ball) {
             this._ball.render(this._ctx, this._width, this._height);
         }
-        
+
         // Draw event marker above ball
         this._drawEventMarker();
     }
 
-    // Find player at coordinates
     getPlayerAt(x, y) {
         for (const player of this._players) {
             if (player.containsPoint(x, y, this._width, this._height)) {
@@ -488,7 +477,7 @@ class InfoCard {
 
     show(x, y, data) {
         const teamBadge = data.team === 'Home' ? '🏠' : '✈️';
-        
+
         this._element.innerHTML = `
             <div class="tooltip-name">
                 <span class="tooltip-jersey">${data.jerseyNumber}</span>
@@ -498,8 +487,7 @@ class InfoCard {
                 ${teamBadge} ${data.team} · ${data.position}
             </div>
         `;
-        
-        // Position tooltip
+
         this._element.style.left = `${x + 15}px`;
         this._element.style.top = `${y - 10}px`;
         this._element.classList.add('active');
@@ -510,7 +498,5 @@ class InfoCard {
     }
 }
 
-
-// Export for use in app.js
 window.PitchRenderer = PitchRenderer;
 window.InfoCard = InfoCard;
