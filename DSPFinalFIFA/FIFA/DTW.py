@@ -150,20 +150,26 @@ def euclidean_distance(x1: float, y1: float, x2: float, y2: float) -> float:
 
 def get_ball_position(event: Dict) -> Tuple[float, float]:
     """Extract ball position from event"""
+    # 1. Processed format (dict)
+    ball_pos = event.get('ballPosition')
+    if ball_pos:
+        return (ball_pos.get('x', 0), ball_pos.get('y', 0))
+
+    # 2. Raw format (list)
     ball = event.get('ball', [])
     if ball and len(ball) > 0:
         return (ball[0].get('x', 0), ball[0].get('y', 0))
-    
-    # Fallback to ballPosition if available
-    ball_pos = event.get('ballPosition', {})
-    if ball_pos:
-        return (ball_pos.get('x', 0), ball_pos.get('y', 0))
-    
+
     return (0, 0)
 
 
 def get_event_type(event: Dict) -> str:
     """Extract event type from event"""
+    # 1. Processed format
+    if 'eventType' in event:
+        return event['eventType'] or ''
+
+    # 2. Raw format
     poss_events = event.get('possessionEvents', {})
     if poss_events:
         return poss_events.get('possessionEventType', '') or ''
@@ -172,37 +178,41 @@ def get_event_type(event: Dict) -> str:
 
 def get_pass_type(event: Dict) -> str:
     """Extract pass type from event"""
+    if 'passType' in event: return event['passType'] # Processed
     poss_events = event.get('possessionEvents', {})
     return poss_events.get('passType', '') or '' if poss_events else ''
 
 
 def get_shot_type(event: Dict) -> str:
     """Extract shot type from event"""
+    if 'shotType' in event: return event['shotType'] # Processed
     poss_events = event.get('possessionEvents', {})
     return poss_events.get('shotType', '') or '' if poss_events else ''
 
 
 def get_pressure_type(event: Dict) -> str:
     """Extract pressure type from event"""
+    if 'pressureType' in event: return event['pressureType'] # Processed
     poss_events = event.get('possessionEvents', {})
     return poss_events.get('pressureType', '') or '' if poss_events else ''
 
 
-def get_near_ball_players(event: Dict, ball_x: float, ball_y: float, 
+def get_near_ball_players(event: Dict, ball_x: float, ball_y: float,
                           radius: float = NEAR_BALL_RADIUS) -> List[Tuple[float, float]]:
     """Get positions of players near the ball"""
     near_players = []
-    
+
+    # Handles both raw and processed formats as long as 'homePlayers' is a list of dicts
     for player in event.get('homePlayers', []):
         px, py = player.get('x', 0), player.get('y', 0)
         if euclidean_distance(px, py, ball_x, ball_y) <= radius:
             near_players.append((px, py))
-    
+
     for player in event.get('awayPlayers', []):
         px, py = player.get('x', 0), player.get('y', 0)
         if euclidean_distance(px, py, ball_x, ball_y) <= radius:
             near_players.append((px, py))
-    
+
     return near_players
 
 
@@ -215,7 +225,7 @@ def extract_event_features(event: Dict) -> Dict[str, Any]:
     Returns a feature dictionary.
     """
     ball_x, ball_y = get_ball_position(event)
-    
+
     features = {
         'ball_position': (ball_x, ball_y),
         'event_type': get_event_type(event),
@@ -225,7 +235,7 @@ def extract_event_features(event: Dict) -> Dict[str, Any]:
         'shot_type': get_shot_type(event),
         'pressure_type': get_pressure_type(event)
     }
-    
+
     return features
 
 
@@ -238,7 +248,7 @@ def extract_sequence_features(sequence: Dict) -> List[Dict[str, Any]]:
 # =============================================================================
 # DISTANCE FUNCTIONS
 # =============================================================================
-def player_formation_distance(players1: List[Tuple[float, float]], 
+def player_formation_distance(players1: List[Tuple[float, float]],
                                players2: List[Tuple[float, float]]) -> float:
     """
     Calculate distance between two player formations.
@@ -249,20 +259,20 @@ def player_formation_distance(players1: List[Tuple[float, float]],
         if not players1 and not players2:
             return 0.0
         return 10.0
-    
+
     # For each player in formation 1, find nearest in formation 2
     total_dist = 0.0
-    
+
     for p1 in players1:
         min_dist = float('inf')
         for p2 in players2:
             d = euclidean_distance(p1[0], p1[1], p2[0], p2[1])
             min_dist = min(min_dist, d)
         total_dist += min_dist
-    
+
     # Normalize by number of players
     avg_dist = total_dist / len(players1)
-    
+
     # Also check reverse direction for asymmetry
     total_dist_rev = 0.0
     for p2 in players2:
@@ -271,58 +281,58 @@ def player_formation_distance(players1: List[Tuple[float, float]],
             d = euclidean_distance(p1[0], p1[1], p2[0], p2[1])
             min_dist = min(min_dist, d)
         total_dist_rev += min_dist
-    
+
     avg_dist_rev = total_dist_rev / len(players2)
-    
+
     # Return average of both directions
     return (avg_dist + avg_dist_rev) / 2
 
 
-def event_distance(features1: Dict[str, Any], features2: Dict[str, Any], 
+def event_distance(features1: Dict[str, Any], features2: Dict[str, Any],
                    config: Optional[Dict] = None) -> float:
     """
     Calculate total distance between two events based on their features.
     """
     if config is None:
         config = OPTIONAL_FEATURES
-    
+
     total_distance = 0.0
-    
+
     # 1. Ball position distance (Euclidean)
     ball1 = features1['ball_position']
     ball2 = features2['ball_position']
     ball_dist = euclidean_distance(ball1[0], ball1[1], ball2[0], ball2[1])
     total_distance += WEIGHTS['ball_position'] * ball_dist
-    
+
     # 2. Event type penalty (scaled)
     type_penalty = event_type_penalty(features1['event_type'], features2['event_type'])
     total_distance += WEIGHTS['event_type'] * type_penalty
-    
+
     # 3. Player formation distance
     formation_dist = player_formation_distance(
-        features1['near_players'], 
+        features1['near_players'],
         features2['near_players']
     )
     total_distance += WEIGHTS['player_formation'] * formation_dist
-    
+
     # 4. Optional: Pass type
     if config.get('pass_type', False):
         pass_penalty = pass_type_penalty(features1['pass_type'], features2['pass_type'])
         total_distance += WEIGHTS['pass_type'] * pass_penalty
-    
+
     # 5. Optional: Shot type
     if config.get('shot_type', False):
         shot_penalty = shot_type_penalty(features1['shot_type'], features2['shot_type'])
         total_distance += WEIGHTS['shot_type'] * shot_penalty
-    
+
     # 6. Optional: Pressure type
     if config.get('pressure_type', False):
         pressure_penalty = pressure_type_penalty(
-            features1['pressure_type'], 
+            features1['pressure_type'],
             features2['pressure_type']
         )
         total_distance += WEIGHTS['pressure_type'] * pressure_penalty
-    
+
     return total_distance
 
 
@@ -334,26 +344,26 @@ def dtw_distance(seq1_features: List[Dict], seq2_features: List[Dict],
     """
     Calculate DTW distance between two sequences of event features.
     Uses FastDTW if available, otherwise falls back to basic DTW.
-    
+
     Returns: (total_distance, alignment_path)
     """
     if not seq1_features or not seq2_features:
         return (float('inf'), [])
-    
+
     n, m = len(seq1_features), len(seq2_features)
-    
+
     # Create distance function for fastdtw
     def dist_func(idx1, idx2):
         # Indices come as numpy arrays, extract scalar
         i = int(idx1[0]) if hasattr(idx1, '__len__') else int(idx1)
         j = int(idx2[0]) if hasattr(idx2, '__len__') else int(idx2)
         return event_distance(seq1_features[i], seq2_features[j], config)
-    
+
     if FASTDTW_AVAILABLE:
         # Use fastdtw with index arrays
         seq1_indices = np.arange(n).reshape(-1, 1)
         seq2_indices = np.arange(m).reshape(-1, 1)
-        
+
         distance, path = fastdtw(seq1_indices, seq2_indices, dist=dist_func)
         return (distance, path)
     else:
@@ -367,11 +377,11 @@ def _basic_dtw(seq1_features: List[Dict], seq2_features: List[Dict],
     Basic DTW implementation (O(n*m)) as fallback when fastdtw not available.
     """
     n, m = len(seq1_features), len(seq2_features)
-    
+
     # Initialize cost matrix
     dtw_matrix = np.full((n + 1, m + 1), np.inf)
     dtw_matrix[0, 0] = 0
-    
+
     # Fill the matrix
     for i in range(1, n + 1):
         for j in range(1, m + 1):
@@ -381,7 +391,7 @@ def _basic_dtw(seq1_features: List[Dict], seq2_features: List[Dict],
                 dtw_matrix[i, j-1],      # deletion
                 dtw_matrix[i-1, j-1]     # match
             )
-    
+
     # Backtrack to find path
     path = []
     i, j = n, m
@@ -399,7 +409,7 @@ def _basic_dtw(seq1_features: List[Dict], seq2_features: List[Dict],
                 i -= 1
             else:
                 j -= 1
-    
+
     path.reverse()
     return (dtw_matrix[n, m], path)
 
@@ -417,27 +427,27 @@ def build_sequence_index(matches_data: List[Dict]) -> None:
     Each entry contains sequence features pre-computed for fast comparison.
     """
     global _sequence_index, _cache_initialized
-    
+
     print("[DTW] Building sequence index...")
     _sequence_index = []
-    
+
     for match in matches_data:
         match_id = match.get('matchId', match.get('id', ''))
         home_team = match.get('homeTeam', {})
         away_team = match.get('awayTeam', {})
-        
+
         sequences = match.get('sequences', match.get('plays', []))
-        
+
         for seq in sequences:
             seq_id = seq.get('sequenceId', seq.get('sequence', 0))
             events = seq.get('events', [])
-            
+
             if not events:
                 continue
-            
+
             # Pre-compute features for all events
             features = [extract_event_features(e) for e in events]
-            
+
             _sequence_index.append({
                 'matchId': str(match_id),
                 'sequenceId': seq_id,
@@ -448,7 +458,7 @@ def build_sequence_index(matches_data: List[Dict]) -> None:
                 'time': seq.get('time', ''),
                 'setpieceType': seq.get('setpieceType', 'Open Play')
             })
-    
+
     _cache_initialized = True
     print(f"[DTW] Index built with {len(_sequence_index)} sequences")
 
@@ -456,13 +466,13 @@ def build_sequence_index(matches_data: List[Dict]) -> None:
 def ensure_index_initialized() -> None:
     """Ensure the sequence index is initialized"""
     global _cache_initialized
-    
+
     if not _cache_initialized:
         # Try to load from MatchRepository
         try:
             from DSPFinalFIFA.FIFA.fifa import MatchRepository
             matches = MatchRepository.get_all_matches()
-            
+
             matches_data = []
             for match in matches:
                 plays = match.get_all_plays()
@@ -480,14 +490,14 @@ def ensure_index_initialized() -> None:
                             'setpieceType': play.get('setpieceLabel', 'Open Play')
                         }
                     sequences_dict[seq_id]['events'].append(play)
-                
+
                 matches_data.append({
                     'matchId': match.match_id,
                     'homeTeam': match.home_team.to_dict() if match.home_team else {},
                     'awayTeam': match.away_team.to_dict() if match.away_team else {},
                     'sequences': list(sequences_dict.values())
                 })
-            
+
             build_sequence_index(matches_data)
         except Exception as e:
             print(f"[DTW] Error initializing index: {e}")
@@ -498,56 +508,56 @@ def ensure_index_initialized() -> None:
 # =============================================================================
 # SEARCH FUNCTION
 # =============================================================================
-def search_similar_sequences_dtw(query_sequence: Dict, 
+def search_similar_sequences_dtw(query_sequence: Dict,
                                   top_n: int = TOP_N,
                                   config: Optional[Dict] = None,
                                   exclude_match_id: str = None,
                                   exclude_seq_id: int = None) -> List[Dict]:
     """
     Search for sequences similar to the query using DTW.
-    
+
     Args:
         query_sequence: Dict with 'events' list
         top_n: Number of results to return
         config: Optional feature configuration
         exclude_match_id: Match ID to exclude from results
         exclude_seq_id: Sequence ID to exclude (used with exclude_match_id)
-    
+
     Returns:
         List of similar sequences with distance and similarity scores
     """
     ensure_index_initialized()
-    
+
     if config is None:
         config = OPTIONAL_FEATURES
-    
+
     # Extract features from query
     query_events = query_sequence.get('events', [])
     if not query_events:
         return []
-    
+
     query_features = [extract_event_features(e) for e in query_events]
-    
+
     # Compare with all indexed sequences
     results = []
-    
+
     for entry in _sequence_index:
         # Skip excluded sequence
         if exclude_match_id and exclude_seq_id is not None:
             if entry['matchId'] == exclude_match_id and entry['sequenceId'] == exclude_seq_id:
                 continue
-        
+
         # Calculate DTW distance
         distance, path = dtw_distance(query_features, entry['features'], config)
-        
+
         # Normalize distance to similarity score (0-1)
         # Use sequence length for normalization
         path_length = max(len(query_features), len(entry['features']))
         normalized_distance = distance / path_length if path_length > 0 else distance
-        
+
         # Convert to similarity (higher = more similar)
         similarity = max(0, 1 - (normalized_distance / MAX_DISTANCE))
-        
+
         results.append({
             'matchId': entry['matchId'],
             'sequenceId': entry['sequenceId'],
@@ -560,35 +570,47 @@ def search_similar_sequences_dtw(query_sequence: Dict,
             'setpieceType': entry['setpieceType'],
             'alignmentPath': path
         })
-    
+
     # Sort by distance (ascending) and take top N
     results.sort(key=lambda x: x['distance'])
-    
+
     return results[:top_n]
 
 
 def _lightweight_events(events: List[Dict]) -> List[Dict]:
-    """Return lightweight version of events without heavy player arrays"""
+    """Return lightweight version of events WITH player coordinates for pitch rendering"""
     lightweight = []
     for event in events:
-        poss = event.get('possessionEvents', {})
-        game = event.get('gameEvents', {})
-        
-        ball = event.get('ball', [])
-        ball_pos = {'x': ball[0].get('x', 0), 'y': ball[0].get('y', 0)} if ball else event.get('ballPosition', {})
-        
-        lightweight.append({
-            'eventType': poss.get('possessionEventType', game.get('gameEventType', '')),
-            'eventLabel': poss.get('possessionEventType', game.get('gameEventType', '')),
-            'playerName': game.get('playerName', ''),
-            'playerId': game.get('playerId', ''),
-            'teamId': game.get('teamId', ''),
-            'teamName': game.get('teamName', ''),
-            'time': game.get('startFormattedGameClock', ''),
+        # [FIX] Simplified extraction from processed play data
+        # We assume the input 'events' here are the processed plays from fifa.py
+
+        ball_pos = event.get('ballPosition')
+        if not ball_pos:
+            ball = event.get('ball', [])
+            if ball:
+                ball_pos = {'x': ball[0].get('x', 0), 'y': ball[0].get('y', 0)}
+
+        # [FIX] Use keys directly from processed data where possible
+        lw = {
+            'eventType': event.get('eventType', ''),
+            'eventLabel': event.get('eventLabel', ''),
+            'playerName': event.get('playerName', ''),
+            'playerId': event.get('playerId', ''),
+            'teamId': event.get('teamId', ''),
+            'teamName': event.get('teamName', ''),
+            'time': event.get('time', ''),
             'ballPosition': ball_pos,
-            'isGoal': poss.get('shotOutcomeType', '') == 'G'
-        })
-    
+            'isGoal': event.get('isGoal', False),
+            # [FIX] Include full player arrays so pitch can render 0 events bug
+            'homePlayers': event.get('homePlayers', []),
+            'awayPlayers': event.get('awayPlayers', []),
+            # Include extended info for potential frontend use
+            'passType': event.get('passType', ''),
+            'shotType': event.get('shotType', '')
+        }
+
+        lightweight.append(lw)
+
     return lightweight
 
 
@@ -602,12 +624,12 @@ def compare_sequences(seq1: Dict, seq2: Dict, config: Optional[Dict] = None) -> 
     """
     if config is None:
         config = OPTIONAL_FEATURES
-    
+
     features1 = [extract_event_features(e) for e in seq1.get('events', [])]
     features2 = [extract_event_features(e) for e in seq2.get('events', [])]
-    
+
     distance, path = dtw_distance(features1, features2, config)
-    
+
     # Calculate per-event distances along the path
     event_distances = []
     for i, j in path:
@@ -618,11 +640,11 @@ def compare_sequences(seq1: Dict, seq2: Dict, config: Optional[Dict] = None) -> 
                 'seq2_index': j,
                 'distance': d
             })
-    
+
     path_length = max(len(features1), len(features2))
     normalized_distance = distance / path_length if path_length > 0 else distance
     similarity = max(0, 1 - (normalized_distance / MAX_DISTANCE))
-    
+
     return {
         'distance': distance,
         'similarity': similarity,

@@ -349,27 +349,30 @@ class Match:
     
     def get_player_name(self, player_id: int) -> str:
         """Get player name from roster"""
+        if not player_id:
+            return ''
         self._load_roster()
+        str_id = str(player_id)
         for p in self._roster:
-            if p.get('player', {}).get('id') == str(player_id):
+            if p.get('player', {}).get('id') == str_id:
                 return p.get('player', {}).get('nickname', '')
         return ''
-    
+
     def find_goals(self) -> List[Dict]:
         """Find all goals in the match with preceding pass sequence"""
         self._load_events()
         goals = []
         seen_goal_times = set()  # Track goals by time to avoid duplicates
-        
+
         for i, event in enumerate(self._events):
             game_events = event.get('gameEvents', {})
             poss_events = event.get('possessionEvents', {})
-            
+
             # Check for goal: ONLY use shotOutcomeType == 'G' (shot resulting in goal)
             # AND filter out nonEvent=True (disallowed goals: VAR/offside)
             is_shot_goal = poss_events.get('shotOutcomeType') == 'G'
             is_valid = not poss_events.get('nonEvent', False)  # nonEvent=True means disallowed
-            
+
             if is_shot_goal and is_valid:
                 # Deduplication: skip if we already recorded a goal at this time
                 goal_time = game_events.get('startFormattedGameClock', '')
@@ -377,18 +380,18 @@ class Match:
                 if goal_key in seen_goal_times:
                     continue
                 seen_goal_times.add(goal_key)
-                
+
                 # Detect if penalty kick using setpieceType field
                 setpiece_type = game_events.get('setpieceType', '')
                 is_penalty = setpiece_type == 'P' or poss_events.get('shotType') == 'PK'
                 # Get sequence number to find related events
                 sequence = event.get('sequence')
-                
+
                 # Find preceding events in same sequence (passes leading to goal)
                 pass_sequence = []
                 involved_player_ids = set()  # Track player IDs involved in buildup
                 involved_player_positions = {}  # player_id -> {x, y, jerseyNum, name}
-                
+
                 # For penalties, skip pass sequence entirely
                 if not is_penalty and sequence is not None:
                     # Look back for passes in same or recent sequences
@@ -398,7 +401,7 @@ class Match:
                         prev_poss = prev_event.get('possessionEvents', {})
                         prev_game = prev_event.get('gameEvents', {})
                         prev_seq = prev_event.get('sequence')
-                        
+
                         # Include passes from same sequence or 1-2 sequences before
                         if prev_seq is not None and sequence is not None:
                             if sequence - 3 <= prev_seq <= sequence:
@@ -407,7 +410,7 @@ class Match:
                                     passer_name = prev_poss.get('passerPlayerName', '')
                                     receiver_id = prev_poss.get('receiverPlayerId') or prev_poss.get('targetPlayerId')
                                     receiver_name = prev_poss.get('receiverPlayerName', '') or prev_poss.get('targetPlayerName', '')
-                                    
+
                                     # Get ball position for pass
                                     ball = prev_event.get('ball', [{}])
                                     ball_pos = None
@@ -416,7 +419,7 @@ class Match:
                                             'x': ball[0].get('x', 0),
                                             'y': ball[0].get('y', 0)
                                         }
-                                    
+
                                     if passer_name:
                                         pass_sequence.append({
                                             'passerName': passer_name,
@@ -425,7 +428,7 @@ class Match:
                                             'teamId': str(prev_game.get('teamId', '')),
                                             'ballPosition': ball_pos
                                         })
-                                    
+
                                     # Track involved players and their positions at this moment
                                     if passer_id:
                                         involved_player_ids.add(passer_id)
@@ -452,25 +455,25 @@ class Match:
                                                     'playerName': receiver_name,
                                                     'positionGroupType': p.get('positionGroupType', '')
                                                 }
-                
+
                 # Limit to last 5 passes
                 pass_sequence = pass_sequence[-5:]
-                
+
                 # Get scorer info directly from this shot event
                 scorer_id = poss_events.get('shooterPlayerId')
                 scorer_name = poss_events.get('shooterPlayerName', '')
                 scoring_team_id = str(game_events.get('teamId', ''))
                 keeper_id = poss_events.get('keeperPlayerId')
                 keeper_name = poss_events.get('keeperPlayerName', '')
-                
+
                 # If shooter name is empty, try to get from roster
                 if not scorer_name and scorer_id:
                     scorer_name = self.get_player_name(scorer_id) or 'Unknown'
-                
+
                 # Add scorer to involved players
                 if scorer_id:
                     involved_player_ids.add(scorer_id)
-                
+
                 # Get ball position from the shot event
                 ball_data = event.get('ball', [{}])
                 ball_pos = None
@@ -480,11 +483,11 @@ class Match:
                         'y': ball_data[0].get('y', 0),
                         'z': ball_data[0].get('z', 0)
                     }
-                
+
                 # Build key player lists
                 key_home_players = []
                 key_away_players = []
-                
+
                 if is_penalty:
                     # For penalties: ONLY shooter and opposing goalkeeper
                     # Find shooter position
@@ -503,7 +506,7 @@ class Match:
                                 key_home_players.append(player_data)
                             else:
                                 key_away_players.append(player_data)
-                    
+
                     # Find goalkeeper (opposing team's GK)
                     for p in event.get('homePlayers', []):
                         if p.get('positionGroupType') == 'GK' or p.get('playerId') == keeper_id:
@@ -530,7 +533,7 @@ class Match:
                 else:
                     # For regular goals: use involved players from pass sequence
                     # Plus the scorer and opposing goalkeeper
-                    
+
                     # First, add goalkeeper from defending team
                     for p in event.get('homePlayers', []):
                         if p.get('positionGroupType') == 'GK' or p.get('playerId') == keeper_id:
@@ -554,7 +557,7 @@ class Match:
                                 'positionGroupType': 'GK'
                             })
                             break
-                    
+
                     # Add involved players using their positions from the pass sequence
                     for pid, pdata in involved_player_positions.items():
                         # Determine if home or away based on the event data
@@ -565,7 +568,7 @@ class Match:
                         else:
                             if len(key_away_players) < 6:
                                 key_away_players.append(pdata)
-                    
+
                     # Add scorer if not already included
                     scorer_included = any(p.get('playerId') == scorer_id for p in key_home_players + key_away_players)
                     if not scorer_included and scorer_id:
@@ -584,7 +587,7 @@ class Match:
                                 else:
                                     key_away_players.append(player_data)
                                 break
-                
+
                 goal_data = {
                     'eventIndex': i,
                     'time': game_events.get('startFormattedGameClock', ''),
@@ -597,11 +600,11 @@ class Match:
                     'awayPlayers': key_away_players,
                     'isPenalty': is_penalty
                 }
-                
+
                 goals.append(goal_data)
-        
+
         return goals
-    
+
     def count_goals(self) -> int:
         """Count goals in the match - uses shotOutcomeType and filters out nonEvent (disallowed goals)"""
         self._load_events()
@@ -622,11 +625,11 @@ class Match:
                     seen_goal_times.add(goal_key)
                     count += 1
         return count
-    
+
     def get_all_plays(self) -> List[Dict]:
         """Get all plays/events in the match grouped by sequence"""
         self._load_events()
-        
+
         # Event type mapping for display
         EVENT_LABELS = {
             'PA': 'Pass',
@@ -639,7 +642,7 @@ class Match:
             'IT': 'Initial Touch',
             'RE': 'Rebound'
         }
-        
+
         # Setpiece type mapping
         SETPIECE_LABELS = {
             'O': 'Open Play',
@@ -650,22 +653,22 @@ class Match:
             'G': 'Goal Kick',
             'F': 'Free Kick'
         }
-        
+
         plays = []
-        
+
         for i, event in enumerate(self._events):
             game_events = event.get('gameEvents', {})
             poss_events = event.get('possessionEvents', {})
-            
+
             # Get event type
             event_type = poss_events.get('possessionEventType')
             if not event_type:
                 continue  # Skip events without possession type
-            
+
             # Skip if nonEvent (disallowed)
             if poss_events.get('nonEvent', False):
                 continue
-            
+
             # Get primary player for this event
             player_name = ''
             player_id = None
@@ -699,7 +702,11 @@ class Match:
             else:
                 player_name = game_events.get('playerName', '')
                 player_id = game_events.get('playerId')
-            
+
+            # [FIX] Lookup player name in roster if missing
+            if not player_name and player_id:
+                player_name = self.get_player_name(player_id) or 'Unknown'
+
             # Get secondary player (receiver, target, etc.)
             secondary_player = ''
             secondary_player_id = None
@@ -714,7 +721,11 @@ class Match:
                 secondary_player_id = poss_events.get('keeperPlayerId')
                 # Assister is the passer for the shot
                 assister_id = poss_events.get('passerPlayerId')
-            
+
+            # [FIX] Lookup secondary player name in roster if missing
+            if not secondary_player and secondary_player_id:
+                secondary_player = self.get_player_name(secondary_player_id)
+
             # Build list of key player IDs for this event
             key_player_ids = []
             if player_id:
@@ -734,7 +745,7 @@ class Match:
                     key_player_ids.append(home_duel_id)
                 if away_duel_id:
                     key_player_ids.append(away_duel_id)
-            
+
             # Get outcome
             outcome = ''
             is_goal = False
@@ -749,7 +760,7 @@ class Match:
                 outcome = poss_events.get('clearanceOutcomeType', '')
             elif event_type == 'CH':
                 outcome = poss_events.get('challengeOutcomeType', '')
-            
+
             # Get ball position
             ball_data = event.get('ball', [{}])
             ball_pos = None
@@ -759,11 +770,11 @@ class Match:
                     'y': ball_data[0].get('y', 0),
                     'z': ball_data[0].get('z', 0)
                 }
-            
+
             # Get player positions
             home_players = event.get('homePlayers', [])
             away_players = event.get('awayPlayers', [])
-            
+
             play_data = {
                 'index': i,
                 'eventId': event.get('gameEventId'),
@@ -788,13 +799,17 @@ class Match:
                 'isGoal': is_goal,
                 'ballPosition': ball_pos,
                 'homePlayers': home_players,
-                'awayPlayers': away_players
+                'awayPlayers': away_players,
+                # [FIX] Added detailed types for DTW feature extraction
+                'passType': poss_events.get('passType', ''),
+                'shotType': poss_events.get('shotType', ''),
+                'pressureType': poss_events.get('pressureType', '')
             }
-            
+
             plays.append(play_data)
-        
+
         return plays
-    
+
     def to_dict(self) -> Dict:
         """Convert match to dictionary (lightweight, no event loading)"""
         return {
@@ -811,29 +826,29 @@ class Match:
 # =============================================================================
 class MatchRepository:
     """Repository pattern - encapsulates data access logic"""
-    
+
     _cache: Dict[str, Match] = {}
-    
+
     @classmethod
     def get_all_match_ids(cls) -> List[str]:
         """Get all available match IDs"""
         metadata_dir = DATA_DIR / 'Metadata'
         if not metadata_dir.exists():
             return []
-        
+
         match_ids = []
         for f in metadata_dir.glob('*.json'):
             match_ids.append(f.stem)
-        
+
         return sorted(match_ids)
-    
+
     @classmethod
     def get_match(cls, match_id: str) -> Optional[Match]:
         """Get match by ID with caching"""
         if match_id not in cls._cache:
             cls._cache[match_id] = Match(match_id)
         return cls._cache[match_id]
-    
+
     @classmethod
     def get_all_matches(cls) -> List[Match]:
         """Get all matches sorted by date ascending"""
@@ -850,17 +865,17 @@ def index(request):
     """Home page view"""
     matches = MatchRepository.get_all_matches()
     matches_data = []
-    
+
     for m in matches:
         match_dict = m.to_dict()
         # Count goals for each match (lazy, only load if needed later)
         # For now, just add the match data
         matches_data.append(match_dict)
-    
+
     # Convert to JSON string for template
     import json as json_lib
     matches_json = json_lib.dumps(matches_data)
-    
+
     return render(request, 'index.html', {'matches': matches_json})
 
 
@@ -876,9 +891,9 @@ def api_match_goals(request, match_id: str):
     match = MatchRepository.get_match(match_id)
     if not match:
         return JsonResponse({'error': 'Match not found'}, status=404)
-    
+
     goals_raw = match.find_goals()
-    
+
     # Transform goals to expected format for frontend
     goals = []
     for g in goals_raw:
@@ -909,15 +924,15 @@ def api_match_goals(request, match_id: str):
                 for p in g.get('passSequence', [])
             ]
         }
-        
+
         # Set team name
         if g.get('scoringTeamId') == (match.home_team.team_id if match.home_team else ''):
             goal_data['goal']['teamName'] = match.home_team.name if match.home_team else 'Home'
         else:
             goal_data['goal']['teamName'] = match.away_team.name if match.away_team else 'Away'
-        
+
         goals.append(goal_data)
-    
+
     return JsonResponse({
         'matchId': match_id,
         'match': {
@@ -933,9 +948,9 @@ def api_match_plays(request, match_id: str):
     match = MatchRepository.get_match(match_id)
     if not match:
         return JsonResponse({'error': 'Match not found'}, status=404)
-    
+
     plays = match.get_all_plays()
-    
+
     # Group plays by sequence for better organization
     # Skip events without valid sequence
     sequences_dict = {}
@@ -955,10 +970,10 @@ def api_match_plays(request, match_id: str):
         # Update time to first event's time if not set
         if not sequences_dict[seq_id]['time'] and play.get('time'):
             sequences_dict[seq_id]['time'] = play.get('time')
-    
+
     # Convert to sorted list (handle None sequenceIds)
     sequences_list = sorted(sequences_dict.values(), key=lambda s: s['sequenceId'] if s['sequenceId'] is not None else -1)
-    
+
     return JsonResponse({
         'matchId': match_id,
         'match': {
@@ -979,24 +994,24 @@ def api_search_event(request):
     """API: Search for similar events using TF-IDF"""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
-    
+
     import json
     from .TF_IDF import search_similar_events
-    
+
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    
+
     query_event = data.get('event')
     if not query_event:
         return JsonResponse({'error': 'event required'}, status=400)
-    
+
     exclude_match_id = data.get('matchId')
     exclude_seq_id = data.get('sequenceId')
     exclude_event_idx = data.get('eventIndex')
     top_n = data.get('topN', 10)
-    
+
     results = search_similar_events(
         query_event=query_event,
         exclude_match_id=exclude_match_id,
@@ -1004,7 +1019,7 @@ def api_search_event(request):
         exclude_event_idx=exclude_event_idx,
         top_n=top_n
     )
-    
+
     return JsonResponse({
         'query': {
             'eventType': query_event.get('eventLabel', query_event.get('eventType', '')),
@@ -1021,27 +1036,27 @@ def api_search_sequence(request):
     """API: Search for similar sequences using DTW or TF-IDF"""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
-    
+
     import json
-    
+
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    
+
     query_events = data.get('events')
     if not query_events:
         return JsonResponse({'error': 'events required'}, status=400)
-    
+
     exclude_match_id = data.get('matchId')
     exclude_seq_id = data.get('sequenceId')
     top_n = data.get('topN', 10)
     method = data.get('method', 'dtw')  # Default to DTW
-    
+
     if method == 'dtw':
         # Use DTW search
         from .DTW import search_similar_sequences_dtw
-        
+
         query_sequence = {'events': query_events}
         results = search_similar_sequences_dtw(
             query_sequence=query_sequence,
@@ -1052,14 +1067,14 @@ def api_search_sequence(request):
     else:
         # Use TF-IDF search
         from .TF_IDF import search_similar_sequences
-        
+
         results = search_similar_sequences(
             query_events=query_events,
             exclude_match_id=exclude_match_id,
             exclude_seq_id=exclude_seq_id,
             top_n=top_n
         )
-    
+
     return JsonResponse({
         'query': {
             'setpieceType': query_events[0].get('setpieceLabel', '') if query_events else '',
@@ -1070,4 +1085,3 @@ def api_search_sequence(request):
         'results': results,
         'count': len(results)
     })
-
