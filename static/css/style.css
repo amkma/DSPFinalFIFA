@@ -712,8 +712,19 @@ body {
     border: 1px solid var(--border-color);
 }
 
+/* =============================================================================
+   PITCH MODAL EXPANSION LOGIC
+   ============================================================================= */
 .pitch-modal {
     max-width: 900px;
+    /* Smooth transition for expansion */
+    transition: max-width 0.3s ease, width 0.3s ease;
+}
+
+/* This class is toggled by JS when comparison is active */
+.pitch-modal.expanded {
+    max-width: 98vw; /* Expand to almost full screen width */
+    width: 98vw;
 }
 
 .modal-title-group {
@@ -922,6 +933,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-width: 0; /* Prevent flex items from overflowing */
 }
 
 .pitch-container {
@@ -1141,24 +1153,24 @@ body {
     .matches-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .modal-container {
         width: 95%;
         max-height: 90vh;
     }
-    
+
     .pitch-modal-body {
         grid-template-columns: 1fr;
     }
-    
+
     .pass-sequence-panel {
         max-height: 200px;
     }
-    
+
     .pitch-container {
         padding: 8px;
     }
-    
+
     .goals-grid {
         grid-template-columns: 1fr;
     }
@@ -1445,21 +1457,21 @@ body {
     .filter-bar {
         gap: 6px;
     }
-    
+
     .filter-btn {
         padding: 6px 12px;
         font-size: 12px;
     }
-    
+
     .sequence-header {
         flex-wrap: wrap;
         gap: 8px;
     }
-    
+
     .seq-time {
         margin-left: 0;
     }
-    
+
     .event-item .view-pitch-btn {
         opacity: 1;
         padding: 4px 8px;
@@ -1954,4 +1966,3 @@ body {
     font-size: 32px;
     margin-bottom: 8px;
 }
-
