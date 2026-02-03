@@ -769,7 +769,7 @@ class App {
         if (!this._currentSequence || !this._currentMatch) return;
 
         // Get selected search method
-        const method = this.searchMethodSelect?.value || 'dtw';
+        const method = this.searchMethodSelect?.value || 'hybrid';
 
         // Show loading
         this.searchSequenceBtn.classList.add('loading');
