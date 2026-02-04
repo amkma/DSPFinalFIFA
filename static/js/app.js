@@ -159,7 +159,6 @@ class EventVisualizer {
     }
 }
 
-
 // =============================================================================
 // ENCAPSULATION: App class handles all application state
 // =============================================================================
@@ -171,16 +170,29 @@ class App {
         this._visualizer = null;
         this._currentMatch = null;
         this._activeFilter = 'all';
+        this._searchDebounceTimer = null;
+        this._allMatches = [...this._matches];
+        this._searchMode = false;
+        this._currentEvent = null;
+        this._comparisonVisualizer = null;
+        this._searchType = null;
+        this._searchResults = null;
+        this._currentSequence = null;
+        this._currentComparisonResult = null;
+        this._currentComparisonEvent = null;
 
         this._initElements();
         this._bindEvents();
         this._renderMatches();
+        this._calculateTotalGoals();
+        this._loadTheme();
     }
 
     _initElements() {
         // Main grid
         this.matchesGrid = document.getElementById('matchesGrid');
         this.matchCount = document.getElementById('matchCount');
+        this.totalGoals = document.getElementById('totalGoals');
 
         // Plays modal (formerly goals modal)
         this.goalsModal = document.getElementById('goalsModal');
@@ -197,7 +209,14 @@ class App {
         this.goalMinute = document.getElementById('goalMinute');
         this.passSequenceList = document.getElementById('passSequenceList');
 
-        // Search elements
+        // Search elements (header)
+        this.searchInput = document.getElementById('searchInput');
+        this.searchResultsDropdown = document.getElementById('searchResultsDropdown');
+        this.searchResultsList = document.getElementById('searchResultsList');
+        this.searchResultCount = document.getElementById('searchResultCount');
+        this.themeToggle = document.getElementById('themeToggle');
+
+        // Pitch search elements
         this.searchMethodSelect = document.getElementById('searchMethodSelect');
         this.searchSequenceBtn = document.getElementById('searchSequenceBtn');
         this.searchResults = document.getElementById('searchResults');
@@ -212,14 +231,10 @@ class App {
         this.comparisonPitchSection = document.getElementById('comparisonPitchSection');
         this.queryEventsList = document.getElementById('queryEventsList');
         this.comparisonEventsList = document.getElementById('comparisonEventsList');
-
-        // Search state
-        this._searchMode = false;
-        this._currentEvent = null;
-        this._comparisonVisualizer = null;
     }
 
     _bindEvents() {
+        // Modal events
         if (this.goalsCloseBtn) {
             this.goalsCloseBtn.addEventListener('click', () => this._closeGoalsModal());
         }
@@ -232,6 +247,25 @@ class App {
         if (this.pitchModal) {
             this.pitchModal.querySelector('.modal-overlay')?.addEventListener('click', () => this._closePitchModal());
         }
+
+        // Search events (header)
+        if (this.searchInput) {
+            this.searchInput.addEventListener('input', (e) => this._handleSearch(e));
+            this.searchInput.addEventListener('focus', () => this._showSearchResults());
+            document.addEventListener('click', (e) => {
+                if (!this.searchInput.contains(e.target) && 
+                    !this.searchResultsDropdown.contains(e.target)) {
+                    this._hideSearchResults();
+                }
+            });
+        }
+
+        // Theme toggle
+        if (this.themeToggle) {
+            this.themeToggle.addEventListener('click', () => this._toggleTheme());
+        }
+
+        // Pitch search events
         if (this.searchSequenceBtn) {
             this.searchSequenceBtn.addEventListener('click', () => this._searchSimilarSequence());
         }
@@ -239,6 +273,7 @@ class App {
             this.searchBackBtn.addEventListener('click', () => this._exitSearchMode());
         }
 
+        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 if (this._searchMode) {
@@ -248,14 +283,206 @@ class App {
                     this._closeGoalsModal();
                 }
             }
+            
+            // Ctrl/Cmd + K for search focus
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                if (this.searchInput) {
+                    this.searchInput.focus();
+                    this._showSearchResults();
+                }
+            }
         });
 
+        // Window resize
         window.addEventListener('resize', () => {
             if (this._visualizer) {
                 this._visualizer.resize();
             }
             if (this._comparisonVisualizer) {
                 this._comparisonVisualizer.resize();
+            }
+        });
+    }
+
+    _calculateTotalGoals() {
+        // This is a placeholder - you should calculate actual goals from your data
+        // For demonstration, we'll set a World Cup 2022 total
+        if (this.totalGoals) {
+            // World Cup 2022 had 172 goals
+            this.totalGoals.textContent = '172';
+        }
+    }
+
+    _loadTheme() {
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        if (savedTheme === 'light') {
+            document.body.classList.add('light-theme');
+            this._updateThemeIcon('light');
+        } else {
+            this._updateThemeIcon('dark');
+        }
+    }
+
+    _updateThemeIcon(theme) {
+        if (!this.themeToggle) return;
+        
+        const icon = this.themeToggle.querySelector('svg');
+        if (!icon) return;
+        
+        if (theme === 'light') {
+            icon.innerHTML = `
+                <path d="M12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            `;
+        } else {
+            icon.innerHTML = `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>`;
+        }
+    }
+
+    _toggleTheme() {
+        const isLight = document.body.classList.toggle('light-theme');
+        localStorage.setItem('theme', isLight ? 'light' : 'dark');
+        this._updateThemeIcon(isLight ? 'light' : 'dark');
+    }
+
+    _handleSearch(event) {
+        clearTimeout(this._searchDebounceTimer);
+        
+        this._searchDebounceTimer = setTimeout(() => {
+            const query = event.target.value.trim().toLowerCase();
+            
+            if (query.length < 2) {
+                this._showRecentMatches();
+                return;
+            }
+            
+            this._performSearch(query);
+        }, 300);
+    }
+
+    _performSearch(query) {
+        const results = this._allMatches.filter(match => {
+            const searchText = [
+                match.homeTeam?.name || '',
+                match.awayTeam?.name || '',
+                match.homeTeam?.shortName || '',
+                match.awayTeam?.shortName || '',
+                match.stadium || '',
+                this._formatDate(match.date) || '',
+                match.competition || '',
+                match.stage || ''
+            ].join(' ').toLowerCase();
+            
+            return searchText.includes(query);
+        });
+        
+        this._displaySearchResults(results, query);
+    }
+
+    _showRecentMatches() {
+        const recentMatches = this._allMatches.slice(0, 5);
+        this._displaySearchResults(recentMatches, null);
+    }
+
+    _displaySearchResults(results, query) {
+        if (!this.searchResultsList || !this.searchResultCount) return;
+        
+        this.searchResultsList.innerHTML = '';
+        
+        if (results.length === 0 && query) {
+            this.searchResultsList.innerHTML = `
+                <div class="no-search-results">
+                    <div class="no-search-results-icon">🔍</div>
+                    <p>No matches found for "${query}"</p>
+                    <p class="loading-sub">Try different search terms</p>
+                </div>
+            `;
+            this.searchResultCount.textContent = '0 results';
+            return;
+        }
+        
+        if (results.length === 0) {
+            this.searchResultsList.innerHTML = `
+                <div class="no-search-results">
+                    <div class="no-search-results-icon">⚽</div>
+                    <p>No matches available</p>
+                </div>
+            `;
+            this.searchResultCount.textContent = '0 matches';
+            return;
+        }
+        
+        this.searchResultCount.textContent = `${results.length} match${results.length !== 1 ? 'es' : ''}`;
+        
+        const fragment = document.createDocumentFragment();
+        
+        results.forEach(match => {
+            const item = document.createElement('div');
+            item.className = 'search-result-item';
+            item.dataset.matchId = match.id;
+            
+            const homeTeam = match.homeTeam || {};
+            const awayTeam = match.awayTeam || {};
+            
+            item.innerHTML = `
+                <div class="search-result-match">
+                    <div class="search-result-teams">
+                        <span class="search-result-team home">${homeTeam.shortName || 'HOM'}</span>
+                        <span>vs</span>
+                        <span class="search-result-team away">${awayTeam.shortName || 'AWY'}</span>
+                    </div>
+                    <div class="search-result-details">
+                        <span class="search-result-date">${this._formatDate(match.date)}</span>
+                        <span class="search-result-stadium">${match.stadium || 'World Cup Stadium'}</span>
+                        <span class="search-result-stage">${match.stage || 'Group Stage'}</span>
+                    </div>
+                </div>
+            `;
+            
+            item.addEventListener('click', () => {
+                this._selectMatch(match.id);
+                this.searchInput.value = '';
+                this._hideSearchResults();
+                // Update UI to show we're viewing this match
+                this._highlightSelectedMatch(match.id);
+            });
+            
+            fragment.appendChild(item);
+        });
+        
+        this.searchResultsList.appendChild(fragment);
+        this._showSearchResults();
+    }
+
+    _showSearchResults() {
+        if (this.searchResultsDropdown && this.searchResultsList.children.length > 0) {
+            this.searchResultsDropdown.classList.add('active');
+        }
+    }
+
+    _hideSearchResults() {
+        if (this.searchResultsDropdown) {
+            this.searchResultsDropdown.classList.remove('active');
+        }
+    }
+
+    _highlightSelectedMatch(matchId) {
+        // Highlight match in search results
+        this.searchResultsList.querySelectorAll('.search-result-item').forEach(item => {
+            if (item.dataset.matchId === String(matchId)) {
+                item.classList.add('selected');
+            } else {
+                item.classList.remove('selected');
+            }
+        });
+        
+        // Also highlight in matches grid
+        this.matchesGrid.querySelectorAll('.match-card').forEach(card => {
+            if (card.dataset.matchId === String(matchId)) {
+                card.classList.add('selected');
+            } else {
+                card.classList.remove('selected');
             }
         });
     }
@@ -292,6 +519,8 @@ class App {
 
         const homeShort = match.homeTeam?.shortName || 'HOM';
         const awayShort = match.awayTeam?.shortName || 'AWY';
+        const stage = match.stage || 'Group Stage';
+        const stadium = match.stadium || 'World Cup Stadium';
 
         card.innerHTML = `
             <div class="card-header">
@@ -302,6 +531,10 @@ class App {
             <div class="card-body">
                 <div class="match-info">
                     <span class="match-date">${this._formatDate(match.date)}</span>
+                    <span class="match-stage">${stage}</span>
+                </div>
+                <div class="match-stadium">
+                    <span>🏟️ ${stadium}</span>
                 </div>
             </div>
         `;
@@ -323,6 +556,7 @@ class App {
 
     async _selectMatch(matchId) {
         this._selectedMatchId = matchId;
+        this._highlightSelectedMatch(matchId);
 
         if (this.goalsGrid) {
             this.goalsGrid.innerHTML = `
@@ -362,6 +596,7 @@ class App {
                     <div class="empty-state error">
                         <div class="empty-icon">⚠️</div>
                         <p>Error loading plays</p>
+                        <p class="loading-sub">${error.message}</p>
                     </div>
                 `;
             }
@@ -390,6 +625,7 @@ class App {
                 <div class="empty-state">
                     <div class="empty-icon">📋</div>
                     <p>No plays in this match</p>
+                    <p class="loading-sub">Try another match</p>
                 </div>
             `;
             return;
@@ -402,6 +638,7 @@ class App {
             <button class="filter-btn" data-filter="Shot">Shots 💥</button>
             <button class="filter-btn" data-filter="Pass">Passes 🎯</button>
             <button class="filter-btn" data-filter="goal">Goals ⚽</button>
+            <button class="filter-btn" data-filter="Cross">Crosses ↗️</button>
         `;
 
         const list = document.createElement('div');
@@ -996,12 +1233,55 @@ class App {
 
         this._comparisonVisualizer.visualize(eventData);
     }
+
+    // Public method to refresh matches data
+    refreshMatches(newMatches) {
+        this._matches = newMatches || [];
+        this._allMatches = [...this._matches];
+        this._renderMatches();
+        if (this.matchCount) {
+            this.matchCount.textContent = this._matches.length;
+        }
+    }
+
+    // Public method to clear search
+    clearSearch() {
+        if (this.searchInput) {
+            this.searchInput.value = '';
+            this._hideSearchResults();
+        }
+    }
+
+    // Public method to get current match
+    getCurrentMatch() {
+        return this._currentMatch;
+    }
+
+    // Public method to get current sequence
+    getCurrentSequence() {
+        return this._currentSequence;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof matchesData !== 'undefined') {
         window.app = new App(matchesData);
+        
+        // Add keyboard shortcut hint
+        console.log('💡 Quick Tip: Press Ctrl+K (Cmd+K on Mac) to focus search');
     } else {
         console.error('matchesData not found. Make sure Django is passing the data.');
+        
+        // Show error in UI
+        const main = document.querySelector('.main');
+        if (main) {
+            main.innerHTML = `
+                <div class="empty-state error">
+                    <div class="empty-icon">⚠️</div>
+                    <p>Failed to load matches data</p>
+                    <p class="loading-sub">Please check your internet connection and refresh</p>
+                </div>
+            `;
+        }
     }
 });

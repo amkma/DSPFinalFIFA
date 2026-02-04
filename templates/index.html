@@ -12,16 +12,62 @@
 <body>
     <div class="app">
         <header class="header">
-            <div class="header-content">
-                <div class="logo">
-                    <span class="logo-icon">⚽</span>
-                    <span class="logo-text">FIFA 2022</span>
-                </div>
-                <div class="header-stats">
-                    <span class="stat-badge"><span id="matchCount">0</span> Matches</span>
+    <div class="header-content">
+        <!-- Enhanced Logo -->
+        <div class="logo">
+             <img src="static\LOGO.png" alt="FIFA WC 2022 Goal Visualizer" class="logo">
+            <div>
+                <div class="logo-text">FIFA WC 2022</div>
+                <div class="logo-subtitle">Goal Visualizer</div>
+            </div>
+        </div>
+        
+        <!-- Search Bar -->
+        <div class="search-container">
+            <div class="search-wrapper">
+                <input 
+                    type="text" 
+                    class="search-input" 
+                    id="searchInput"
+                    placeholder="Search matches (team names, stadium, date...)"
+                    autocomplete="off"
+                >
+                <span class="search-icon">🔍</span>
+                
+                <!-- Search Results Dropdown -->
+                <div class="search-results-dropdown" id="searchResultsDropdown">
+                    <div class="search-result-header">
+                        <span>Matches</span>
+                        <span class="result-count" id="searchResultCount">0 results</span>
+                    </div>
+                    <div class="search-results-list" id="searchResultsList">
+                        <!-- Results will be populated here -->
+                    </div>
                 </div>
             </div>
-        </header>
+        </div>
+        
+        <!-- Enhanced Stats -->
+        <div class="header-stats">
+            <div class="stat-badge">
+                <span class="stat-icon">🏆</span>
+                <span>Matches</span>
+                <span id="matchCount">0</span>
+            </div>
+            <div class="stat-badge">
+                <span class="stat-icon">⚽</span>
+                <span>Goals</span>
+                <span id="totalGoals">0</span>
+            </div>
+            <!-- Theme Toggle (Optional) -->
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+</header>
 
         <main class="main">
             <section class="matches-section">
